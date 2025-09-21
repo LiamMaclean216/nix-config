@@ -14,3 +14,9 @@ sudo reboot
 ### Install requirements to the venv. Pyright is configured to use this venv
 
 `source ~/.venv/bin/activate && pip install -r requirements.txt`
+
+
+
+### Delete old boot entries
+
+`sudo nix-collect-garbage -d`
