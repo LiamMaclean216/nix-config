@@ -37,6 +37,7 @@
     };
   };
   services.blueman.enable = true;
+  boot.kernelModules = [ "iwlwifi" "btusb" "rtw88_8822be"];
 
   nixpkgs.config.permittedInsecurePackages = [
     "beekeeper-studio-5.1.5"
@@ -51,7 +52,7 @@
 
   services.displayManager.sddm.enable = true;
   services.displayManager.sddm.wayland.enable = false;
-  services.desktopManager.plasma6.enable = false;
+  services.desktopManager.plasma6.enable = true;
 
   services.gnome.gnome-keyring.enable = true;
 
@@ -79,10 +80,6 @@
     LC_TELEPHONE = "en_US.UTF-8";
     LC_TIME = "en_US.UTF-8";
   };
-
-  # Enable the X11 windowing system.
-  # You can disable this if you're only using the Wayland session.
-  # services.xserver.enable = true;
 
   services.libinput = {
     enable = true;
@@ -166,6 +163,11 @@ virtualisation.docker.enable = true;
     bluez-tools
     blueman
     usbutils
+    nodejs
+    gnumake
+pciutils
+  usbutils
+  linux-firmware
   ];
 
   security.polkit.enable = true;

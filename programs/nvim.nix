@@ -22,13 +22,18 @@
       # Python / Django
       pyright
       ruff
-      python311Packages.debugpy
+      python312Packages.debugpy
 
       # Web (HTML/CSS/JS/TS)
       nodePackages.typescript
       nodePackages.typescript-language-server
       nodePackages.vscode-langservers-extracted
       nodePackages."@tailwindcss/language-server"
+
+      nodePackages.eslint              # linting JS/TS
+      nodePackages.prettier            # formatting JS/TS/HTML/CSS
+      nodePackages.stylelint           # CSS / Tailwind linting
+      nodePackages.svelte-language-server # if you use Svelte
 
       # Docker
       nodePackages.dockerfile-language-server-nodejs

@@ -47,6 +47,31 @@ in
     # '')
   ];
 
+
+  home.sessionVariables = {
+    NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
+  };
+
+# ensure $HOME/node_modules/bin is on PATH at shell runtime
+  home.file.".profile".text = ''
+    if [ -d "$HOME/node_modules/bin" ] && ! echo "$PATH" | grep -q "$HOME/node_modules/bin"; then
+      export PATH="$HOME/node_modules/bin:$PATH"
+    fi
+  '';
+
+  home.activation.enable = lib.mkAfter ''
+    mkdir -p $HOME/node_modules
+    export PATH="$HOME/node_modules/bin:$PATH"
+  '';
+
+  home.activation.npmInstallCodex = lib.mkAfter ''
+    if [ ! -x "$HOME/node_modules/bin/codex" ]; then
+      npm install -g @openai/codex
+    fi
+  '';
+
+
+
   # Home Manager is pretty good at managing dotfiles. The primary way to manage
   # plain files is through 'home.file'.
 # Ensure ~/venv exists with pynvim
