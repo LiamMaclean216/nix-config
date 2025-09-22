@@ -83,7 +83,7 @@ in
 
   # Hyprland configuration (use file in repo root)
     home.file.".config/hypr/hyprland.conf".source = ./hyprland.conf;
-    home.file.".config/rofitheme.rasi".source = ./rofitheme.rasi;
+    home.file.".config/rofi/rofitheme.rasi".source = ./rofitheme.rasi;
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
       VENV="$HOME/.venv"
