@@ -33,6 +33,10 @@
       general = {
         gaps_in = 5;
         gaps_out = 10;
+        # Allow resizing by dragging window edges/corners
+        resize_on_border = true;
+        # Make the resize grab area near borders easier to hit (in px)
+        extend_border_grab_area = 15;
       };
 
       # input

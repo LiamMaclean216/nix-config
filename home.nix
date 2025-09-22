@@ -82,8 +82,14 @@ in
   '';
 
   # Hyprland configuration moved to module file
-  #home.file.".config/hypr/hyprland.conf".source = ./hyprland.conf;
+  #home.file.".config/hypr/hyprland.conf".source = ./desktop/hyprland.conf;
   home.file.".config/rofi/config.rasi".source = ./rofitheme.rasi;
+
+  # Hyprpaper: set wallpaper to the repository image
+  home.file.".config/hypr/hyprpaper.conf".text = ''
+    preload = /home/liam/nix-config/desktop/background.png
+    wallpaper = ,/home/liam/nix-config/desktop/background.png
+  '';
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
       VENV="$HOME/.venv"
@@ -122,7 +128,7 @@ in
 
   imports = [
     ./programs/nvim.nix
-    ./hyprland.nix
+    ./desktop/hyprland.nix
   ];
 
 }
