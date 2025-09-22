@@ -64,8 +64,7 @@ in
     export PATH="$HOME/node_modules/bin:$PATH"
   '';
 
-  home.activation.npmInstallCodex = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    export PATH=${pkgs.nodejs}/bin:$PATH
+  home.activation.npmInstallCodex =lib.hm.dag.entryAfter ["installPackages"] ''    export PATH=${pkgs.nodejs}/bin:$PATH
     mkdir -p $HOME/node_modules
     if [ ! -x "$HOME/node_modules/bin/codex" ]; then
       npm install -g @openai/codex --prefix $HOME/node_modules
