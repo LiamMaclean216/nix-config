@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, inputs, ... }:
 
 let
   myPython = import ./python.nix { inherit pkgs; };
@@ -76,14 +76,14 @@ in
 
   # Home Manager is pretty good at managing dotfiles. The primary way to manage
   # plain files is through 'home.file'.
-# Ensure ~/venv exists with pynvim
-    home.file.".venv/.keep".text = ''
+  # Ensure ~/venv exists with pynvim
+  home.file.".venv/.keep".text = ''
       # placeholder to create venv folder
-    '';
+  '';
 
-  # Hyprland configuration (use file in repo root)
-    home.file.".config/hypr/hyprland.conf".source = ./hyprland.conf;
-    home.file.".config/rofi/config.rasi".source = ./rofitheme.rasi;
+  # Hyprland configuration moved to module file
+  #home.file.".config/hypr/hyprland.conf".source = ./hyprland.conf;
+  home.file.".config/rofi/config.rasi".source = ./rofitheme.rasi;
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
       VENV="$HOME/.venv"
@@ -122,6 +122,7 @@ in
 
   imports = [
     ./programs/nvim.nix
+    ./hyprland.nix
   ];
 
 }

@@ -10,8 +10,8 @@
       ./hardware-configuration.nix
       ./nvidia.nix
       ./fonts.nix
-  ];
-   
+    ];
+
   # env vars configured later alongside Wayland tweaks
   hardware.bluetooth = {
     enable = true;
@@ -36,10 +36,6 @@
   };
   services.blueman.enable = true;
   boot.kernelModules = [ "iwlwifi" "btusb" "rtw88_8822be"];
-
-  nixpkgs.config.permittedInsecurePackages = [
-    "beekeeper-studio-5.1.5"
-  ];
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -86,7 +82,7 @@
     };
   };
 
-virtualisation.docker.enable = true;
+  virtualisation.docker.enable = true;
 
   # Configure keymap in X11
   services.xserver.xkb = {
@@ -123,7 +119,7 @@ virtualisation.docker.enable = true;
     extraGroups = [ "networkmanager" "wheel" "docker"];
     packages = with pkgs; [
       kdePackages.kate
-    #  thunderbird
+      #  thunderbird
     ];
   };
 
@@ -165,10 +161,15 @@ virtualisation.docker.enable = true;
 
     ripgrep
     gnumake
-pciutils
-  usbutils
-  linux-firmware
+    pciutils
+    usbutils
+    linux-firmware
   ];
+
+  nixpkgs.config.permittedInsecurePackages = [
+    "beekeeper-studio-5.1.5"
+  ];
+
 
   security.polkit.enable = true;
   # Some programs need SUID wrappers, can be configured further or are
