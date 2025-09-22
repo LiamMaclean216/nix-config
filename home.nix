@@ -2,7 +2,6 @@
 
 let
   myPython = import ./python.nix { inherit pkgs; };
-  themeName = "Adwaita-dark";  # Dark theme variablec
   plasma-manager = builtins.fetchTarball "https://github.com/nix-community/plasma-manager/archive/plasma-5.tar.gz";
 in
 {
@@ -29,13 +28,11 @@ in
     pkgs.lazygit
     pkgs.wl-clipboard
     pkgs.waybar
-    pkgs.wofi
+    pkgs.rofi-wayland
     pkgs.hyprpaper
     pkgs.hyprlock
 
     myPython
-
-    
 
     # # It is sometimes useful to fine-tune packages, for example, by applying
     # # overrides. You can do that directly here, just don't forget the
@@ -86,7 +83,7 @@ in
 
   # Hyprland configuration (use file in repo root)
     home.file.".config/hypr/hyprland.conf".source = ./hyprland.conf;
-
+    home.file.".config/rofitheme.rasi".source = ./rofitheme.rasi;
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
       VENV="$HOME/.venv"
