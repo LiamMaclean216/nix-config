@@ -14,6 +14,12 @@
     settings = {
       "$mainMod" = "SUPER";
 
+      "plugin:borders-plus-plus" = {
+        add_borders = 1;
+        top_border_color = "rgba(173, 216, 230, 1)";
+        top_border_width = 3;
+      };
+
       # startup
       "exec-once" = [
         "waybar"
@@ -28,9 +34,6 @@
         gaps_in = 5;
         gaps_out = 10;
       };
-
-      # colors
-      "col.active_border" = "rgba(173, 216, 230, 1) rgba(173, 216, 230, 0.5) 45deg";
 
       # input
       input = {
@@ -99,19 +102,8 @@
         ", XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -10%"
         ", XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle"
         ", XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle"
-
-        # duplicate killactive (as in original config)
-        "$mainMod, q, killactive"
       ];
 
-      # plugin configs
-      plugin = {
-        "borders-plus-plus" = {
-          add_borders = 1;
-          top_border_color = "rgba(173, 216, 230, 1)";
-          top_border_width = 3;
-        };
-      };
     };
   };
 }
