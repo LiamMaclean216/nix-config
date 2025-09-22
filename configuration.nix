@@ -12,9 +12,7 @@
       ./fonts.nix
   ];
    
-  environment.variables = {
-    OPENAI_API_KEY = "";
-  };
+  # env vars configured later alongside Wayland tweaks
   hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;
@@ -51,7 +49,7 @@
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
   services.displayManager.sddm.enable = true;
-  services.displayManager.sddm.wayland.enable = false;
+  services.displayManager.sddm.wayland.enable = true;
   services.desktopManager.plasma6.enable = true;
 
   services.gnome.gnome-keyring.enable = true;
@@ -205,20 +203,23 @@ pciutils
 
   services.xserver = {
     enable = true;
-    desktopManager = {
-      xterm.enable = false;
-    };
-    windowManager.i3 = {
-      enable = true;
-      extraPackages = with pkgs; [
-        dmenu #application launcher most people use
-        i3status # gives you the default i3 status bar
-        i3blocks #if you are planning on using i3blocks over i3status
-     ];
-    };
+    desktopManager = { xterm.enable = false; };
   };
 
-  services.displayManager.defaultSession = "none+i3";
+  # Switch to Hyprland (Wayland)
+  programs.hyprland.enable = true;
+  services.displayManager.defaultSession = "hyprland";
 
-  programs.i3lock.enable = true; #default i3 screen locker
+  # XDG portal setup for Wayland (incl. Hyprland)
+  xdg.portal.enable = true;
+  xdg.portal.extraPortals = with pkgs; [
+    xdg-desktop-portal-hyprland
+    xdg-desktop-portal-gtk
+  ];
+
+  # Helpful on some NVIDIA setups using Wayland compositors
+  environment.variables = {
+    OPENAI_API_KEY = "";
+    #WLR_NO_HARDWARE_CURSORS = lib.mkDefault "1";
+  };
 }

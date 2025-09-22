@@ -28,6 +28,10 @@ in
     pkgs.hello
     pkgs.lazygit
     pkgs.wl-clipboard
+    pkgs.waybar
+    pkgs.wofi
+    pkgs.hyprpaper
+    pkgs.hyprlock
 
     myPython
 
@@ -50,6 +54,7 @@ in
 
   home.sessionVariables = {
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
+    TERMINAL = "alacritty";
   };
 
 # ensure $HOME/node_modules/bin is on PATH at shell runtime
@@ -64,10 +69,11 @@ in
     export PATH="$HOME/node_modules/bin:$PATH"
   '';
 
-  home.activation.npmInstallCodex =lib.hm.dag.entryAfter ["installPackages"] ''    export PATH=${pkgs.nodejs}/bin:$PATH
+  home.activation.npmInstallCodex =lib.hm.dag.entryAfter ["installPackages"] ''    
+  export PATH=${pkgs.nodejs}/bin:$PATH
     mkdir -p $HOME/node_modules
     if [ ! -x "$HOME/node_modules/bin/codex" ]; then
-      npm install -g @openai/codex --prefix $HOME/node_modules
+      npm install -g @openai/codex --prefix $HOME/node_modules --ignore-scripts
     fi
   '';
 
@@ -77,6 +83,9 @@ in
     home.file.".venv/.keep".text = ''
       # placeholder to create venv folder
     '';
+
+  # Hyprland configuration (use file in repo root)
+    home.file.".config/hypr/hyprland.conf".source = ./hyprland.conf;
 
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
@@ -110,6 +119,9 @@ in
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
+
+  # Alacritty terminal
+  programs.alacritty.enable = true;
 
   imports = [
     ./programs/nvim.nix
