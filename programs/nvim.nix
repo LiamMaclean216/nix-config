@@ -16,7 +16,6 @@
       # Core
       lua-language-server
       stylua
-      ripgrep
       fd
 
       # Python / Django

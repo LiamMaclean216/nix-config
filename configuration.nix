@@ -164,6 +164,8 @@ virtualisation.docker.enable = true;
     blueman
     usbutils
     nodejs
+
+    ripgrep
     gnumake
 pciutils
   usbutils
