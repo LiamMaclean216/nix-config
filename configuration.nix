@@ -164,6 +164,10 @@
     pciutils
     usbutils
     linux-firmware
+
+    pywal
+    hyprshot
+    imv
   ];
 
   nixpkgs.config.permittedInsecurePackages = [
@@ -223,4 +227,8 @@
     OPENAI_API_KEY = "";
     #WLR_NO_HARDWARE_CURSORS = lib.mkDefault "1";
   };
+
+programs.coolercontrol.enable = true;
+programs.coolercontrol.nvidiaSupport = true;
+powerManagement.cpuFreqGovernor = "performance";
 }

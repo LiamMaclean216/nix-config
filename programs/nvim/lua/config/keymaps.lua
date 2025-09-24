@@ -27,6 +27,18 @@ vim.keymap.set("n", "<C-g>", function()
   })
 end, { desc = "Lazydocker" })
 
+vim.keymap.set("n", "<C-e>", function()
+  Snacks.terminal("codex", {
+    esc_esc = true,
+    ctrl_hjkl = false,
+    win = {
+      position = "float",
+      width = 0.8,
+      height = 0.8,
+    },
+  })
+end, { desc = "Lazydocker" })
+
 vim.keymap.set("n", "<C-v>", function()
   Snacks.terminal("lazydocker", {
     esc_esc = true,

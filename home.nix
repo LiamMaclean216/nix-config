@@ -3,6 +3,7 @@
 let
   myPython = import ./python.nix { inherit pkgs; };
   plasma-manager = builtins.fetchTarball "https://github.com/nix-community/plasma-manager/archive/plasma-5.tar.gz";
+  dir = "${config.home.homeDirectory}/nix-config";
 in
 {
   # Home Manager needs a bit of information about you and the paths it should
@@ -27,10 +28,11 @@ in
     pkgs.hello
     pkgs.lazygit
     pkgs.wl-clipboard
-    pkgs.waybar
+    #pkgs.waybar
     pkgs.rofi-wayland
     pkgs.hyprpaper
     pkgs.hyprlock
+    pkgs.hyprshot
 
     myPython
 
@@ -81,6 +83,12 @@ in
       # placeholder to create venv folder
   '';
 
+  home.file.".config/waybar" = {
+      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/waybar");
+      recursive = true;
+  };
+
+
   # Hyprland configuration moved to module file
   #home.file.".config/hypr/hyprland.conf".source = ./desktop/hyprland.conf;
   home.file.".config/rofi/config.rasi".source = ./rofitheme.rasi;
@@ -89,6 +97,9 @@ in
   home.file.".config/hypr/hyprpaper.conf".text = ''
     preload = /home/liam/nix-config/desktop/background.png
     wallpaper = ,/home/liam/nix-config/desktop/background.png
+  '';
+  xdg.configFile."hypr/autostart.conf".text = ''
+    hyprpaper &
   '';
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''

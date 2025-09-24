@@ -81,6 +81,8 @@
         "$mainMod, D, exec, rofi -show drun"
         "$mainMod, F, exec, dolphin"
         "$mainMod, B, exec, firefox"
+        # screenshot region to clipboard
+        "$mainMod, p, exec, hyprshot -m region --clipboard-only"
 
         # focus (vim-style)
         "$mainMod, h, movefocus, l"
@@ -111,4 +113,3 @@
     };
   };
 }
-

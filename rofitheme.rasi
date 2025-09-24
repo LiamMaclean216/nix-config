@@ -1,70 +1,61 @@
-/* ROUNDED THEME FOR ROFI */
+/* MACOS SPOTLIGHT LIKE DARK THEME FOR ROFI  */
 /* Author: Newman Sanchez (https://github.com/newmanls) */
 
 * {
-    bg0:    #2E3440F2;
-    bg1:    #3B4252;
-    bg2:    #4C566A80;
-    bg3:    #88C0D0F2;
-    fg0:    #D8DEE9;
-    fg1:    #ECEFF4;
-    fg2:    #D8DEE9;
-    fg3:    #4C566A;
-}
+    font:   "Montserrat 12";
 
-/* ROUNDED THEME FOR ROFI */
-/* Author: Newman Sanchez (https://github.com/newmanls) */
+    bg0:    #242424E6;
+    bg1:    #7E7E7E80;
+    bg2:    #0860f2E6;
 
-* {
-    font:   "Roboto 12";
+    fg0:    #DEDEDE;
+    fg1:    #FFFFFF;
+    fg2:    #DEDEDE80;
 
     background-color:   transparent;
     text-color:         @fg0;
 
-    margin:     0px;
-    padding:    0px;
-    spacing:    0px;
+    margin:     0;
+    padding:    0;
+    spacing:    0;
 }
 
 window {
-    location:       north;
-    y-offset:       calc(50% - 176px);
-    width:          480;
-    border-radius:  24px;
-
     background-color:   @bg0;
-}
 
-mainbox {
-    padding:    12px;
+    location:       center;
+    width:          640;
+    border-radius:  8;
 }
 
 inputbar {
-    background-color:   @bg1;
-    border-color:       @bg3;
-
-    border:         2px;
-    border-radius:  16px;
-
-    padding:    8px 16px;
-    spacing:    8px;
-    children:   [ prompt, entry ];
+    font:       "Montserrat 20";
+    padding:    12px;
+    spacing:    12px;
+    children:   [ icon-search, entry ];
 }
 
-prompt {
-    text-color: @fg2;
+icon-search {
+    expand:     false;
+    filename:   "search";
+    size: 28px;
+}
+
+icon-search, entry, element-icon, element-text {
+    vertical-align: 0.5;
 }
 
 entry {
-    placeholder:        "Search";
-    placeholder-color:  @fg3;
+    font:   inherit;
+
+    placeholder         : "Search";
+    placeholder-color   : @fg2;
 }
 
 message {
-    margin:             12px 0 0;
-    border-radius:      16px;
-    border-color:       @bg2;
-    background-color:   @bg2;
+    border:             2px 0 0;
+    border-color:       @bg1;
+    background-color:   @bg1;
 }
 
 textbox {
@@ -72,42 +63,37 @@ textbox {
 }
 
 listview {
-    background-color:   transparent;
-
-    margin:     12px 0 0;
-    lines:      8;
+    lines:      10;
     columns:    1;
 
-    fixed-height: false;
+    fixed-height:   false;
+    border:         1px 0 0;
+    border-color:   @bg1;
 }
 
 element {
-    padding:        8px 16px;
-    spacing:        8px;
-    border-radius:  16px;
+    padding:            8px 16px;
+    spacing:            16px;
+    background-color:   transparent;
 }
 
 element normal active {
-    text-color: @bg3;
+    text-color: @bg2;
 }
 
 element alternate active {
-    text-color: @bg3;
+    text-color: @bg2;
 }
 
 element selected normal, element selected active {
-    background-color:   @bg3;
+    background-color:   @bg2;
+    text-color:         @fg1;
 }
 
 element-icon {
-    size:           1em;
-    vertical-align: 0.5;
+    size:   1em;
 }
 
 element-text {
     text-color: inherit;
-}
-
-element selected {
-    text-color: @bg1;
 }
