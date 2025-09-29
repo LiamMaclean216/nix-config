@@ -14,6 +14,11 @@
     settings = {
       "$mainMod" = "SUPER";
 
+      env = [
+        "XCURSOR_THEME,Windows 10"
+        "XCURSOR_SIZE,24"
+      ];
+
       "plugin:borders-plus-plus" = {
         add_borders = 1;
         top_border_color = "rgba(173, 216, 230, 1)";

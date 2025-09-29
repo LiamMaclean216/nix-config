@@ -127,103 +127,23 @@ in
     # EDITOR = "emacs";
   };
 
+  home.pointerCursor = {
+    name = "Windows 10";
+    package = pkgs.win10-cursors;
+    size = 24;
+    gtk.enable = true;
+  };
+
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
   # Alacritty terminal
   programs.alacritty.enable = true;
 
-  programs.waybar = {
-    enable = true;
-    package = pkgs.waybar;
-    settings.mainBar = {
-      layer = "overlay";
-      position = "bottom";
-      margin = "0 24 24 0";
-      spacing = 10;
-      height = 32;
-      exclusive = false;
-      fixed-center = false;
-      modules-left = [ ];
-      modules-center = [ ];
-      modules-right = [ "tray" "pulseaudio" "battery" "clock" ];
-
-      tray = {
-        "icon-size" = 18;
-        spacing = 8;
-      };
-
-      pulseaudio = {
-        format = "{volume}%";
-        "format-muted" = "muted";
-        "on-click" = "pactl set-sink-mute @DEFAULT_SINK@ toggle";
-        tooltip = false;
-      };
-
-      battery = {
-        format = "{capacity}%";
-        "format-charging" = "chg {capacity}%";
-        "format-plugged" = "ac {capacity}%";
-        "format-critical" = "low {capacity}%";
-        tooltip = false;
-      };
-
-      clock = {
-        format = "{:%a %d %b  %H:%M}";
-        tooltip-format = "{:%A, %d %B %Y}\n%H:%M";
-      };
-    };
-
-    style = ''
-      * {
-        border: none;
-        border-radius: 0;
-        font-family: "JetBrainsMono Nerd Font", monospace;
-        font-size: 12pt;
-        min-height: 0;
-      }
-
-      window#waybar {
-        background: transparent;
-        color: #cdd6f4;
-        padding: 0;
-        margin: 0;
-      }
-
-      #modules-right {
-        background: rgba(24, 24, 36, 0.65);
-        border-radius: 14px;
-        padding: 6px 14px;
-        border: 1px solid rgba(205, 214, 244, 0.18);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-      }
-
-      #modules-right > * {
-        margin-left: 14px;
-      }
-
-      #modules-right > :first-child {
-        margin-left: 0;
-      }
-
-      #clock {
-        font-weight: 600;
-        letter-spacing: 0.5px;
-      }
-
-      #pulseaudio {
-        min-width: 48px;
-      }
-
-      #battery.critical {
-        color: #f38ba8;
-      }
-    '';
-  };
-
   imports = [
     ./programs/nvim.nix
     ./desktop/hyprland.nix
+    ./desktop/waybar.nix
   ];
 
 }
