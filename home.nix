@@ -127,13 +127,6 @@ in
     # EDITOR = "emacs";
   };
 
-  home.pointerCursor = {
-    name = "Windows 10";
-    package = pkgs.win10-cursors;
-    size = 24;
-    gtk.enable = true;
-  };
-
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 

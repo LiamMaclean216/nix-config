@@ -124,8 +124,6 @@
         "blur, wofi"
         "ignorezero, wofi"
         "ignorealpha 0.5, wofi"
-        "overlay, waybar"
-        "ignorezero, waybar"
       ];
 
     };
