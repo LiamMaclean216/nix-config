@@ -46,7 +46,7 @@
 
   services.displayManager.sddm.enable = true;
   services.displayManager.sddm.wayland.enable = true;
-  services.desktopManager.plasma6.enable = true;
+  #services.desktopManager.plasma6.enable = true;
 
   services.gnome.gnome-keyring.enable = true;
 
@@ -166,8 +166,16 @@
     linux-firmware
 
     pywal
+    wofi
     hyprshot
     imv
+    pavucontrol
+    wdisplays
+
+    kdePackages.qtsvg 
+    kdePackages.kio-fuse #to mount remote filesystems via FUSE
+    kdePackages.kio-extras #extra protocols support (sftp, fish and more)
+    kdePackages.dolphin # This is the actual dolphin package
   ];
 
   nixpkgs.config.permittedInsecurePackages = [
@@ -208,7 +216,7 @@
 
   services.xserver = {
     enable = true;
-    desktopManager = { xterm.enable = false; };
+    desktopManager = { xterm.enable = true; };
   };
 
   # Switch to Hyprland (Wayland)

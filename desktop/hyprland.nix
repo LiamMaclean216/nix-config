@@ -78,9 +78,9 @@
         # apps
         "$mainMod, RETURN, exec, alacritty"
         "$mainMod, Q, killactive"
-        "$mainMod, D, exec, rofi -show drun"
         "$mainMod, F, exec, dolphin"
         "$mainMod, B, exec, firefox"
+        "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         # screenshot region to clipboard
         "$mainMod, p, exec, hyprshot -m region --clipboard-only"
 
@@ -108,6 +108,19 @@
         ", XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -10%"
         ", XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle"
         ", XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+      ];
+
+      windowrulev2 = [
+        "noborder, class:^(wofi)$"
+        "rounding 20, class:^(wofi)$"
+      ];
+
+      layerrule = [
+        "blur, wofi"
+        "ignorezero, wofi"
+        "ignorealpha 0.5, wofi"
+        "overlay, waybar"
+        "ignorezero, waybar"
       ];
 
     };

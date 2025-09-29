@@ -2,7 +2,6 @@
 
 let
   myPython = import ./python.nix { inherit pkgs; };
-  plasma-manager = builtins.fetchTarball "https://github.com/nix-community/plasma-manager/archive/plasma-5.tar.gz";
   dir = "${config.home.homeDirectory}/nix-config";
 in
 {
@@ -28,8 +27,6 @@ in
     pkgs.hello
     pkgs.lazygit
     pkgs.wl-clipboard
-    #pkgs.waybar
-    pkgs.rofi-wayland
     pkgs.hyprpaper
     pkgs.hyprlock
     pkgs.hyprshot
@@ -83,15 +80,14 @@ in
       # placeholder to create venv folder
   '';
 
-  home.file.".config/waybar" = {
-      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/waybar");
+  home.file.".config/wofi" = {
+      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wofi");
       recursive = true;
   };
 
 
   # Hyprland configuration moved to module file
   #home.file.".config/hypr/hyprland.conf".source = ./desktop/hyprland.conf;
-  home.file.".config/rofi/config.rasi".source = ./rofitheme.rasi;
 
   # Hyprpaper: set wallpaper to the repository image
   home.file.".config/hypr/hyprpaper.conf".text = ''
@@ -136,6 +132,94 @@ in
 
   # Alacritty terminal
   programs.alacritty.enable = true;
+
+  programs.waybar = {
+    enable = true;
+    package = pkgs.waybar;
+    settings.mainBar = {
+      layer = "overlay";
+      position = "bottom";
+      margin = "0 24 24 0";
+      spacing = 10;
+      height = 32;
+      exclusive = false;
+      fixed-center = false;
+      modules-left = [ ];
+      modules-center = [ ];
+      modules-right = [ "tray" "pulseaudio" "battery" "clock" ];
+
+      tray = {
+        "icon-size" = 18;
+        spacing = 8;
+      };
+
+      pulseaudio = {
+        format = "{volume}%";
+        "format-muted" = "muted";
+        "on-click" = "pactl set-sink-mute @DEFAULT_SINK@ toggle";
+        tooltip = false;
+      };
+
+      battery = {
+        format = "{capacity}%";
+        "format-charging" = "chg {capacity}%";
+        "format-plugged" = "ac {capacity}%";
+        "format-critical" = "low {capacity}%";
+        tooltip = false;
+      };
+
+      clock = {
+        format = "{:%a %d %b  %H:%M}";
+        tooltip-format = "{:%A, %d %B %Y}\n%H:%M";
+      };
+    };
+
+    style = ''
+      * {
+        border: none;
+        border-radius: 0;
+        font-family: "JetBrainsMono Nerd Font", monospace;
+        font-size: 12pt;
+        min-height: 0;
+      }
+
+      window#waybar {
+        background: transparent;
+        color: #cdd6f4;
+        padding: 0;
+        margin: 0;
+      }
+
+      #modules-right {
+        background: rgba(24, 24, 36, 0.65);
+        border-radius: 14px;
+        padding: 6px 14px;
+        border: 1px solid rgba(205, 214, 244, 0.18);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+
+      #modules-right > * {
+        margin-left: 14px;
+      }
+
+      #modules-right > :first-child {
+        margin-left: 0;
+      }
+
+      #clock {
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      #pulseaudio {
+        min-width: 48px;
+      }
+
+      #battery.critical {
+        color: #f38ba8;
+      }
+    '';
+  };
 
   imports = [
     ./programs/nvim.nix
