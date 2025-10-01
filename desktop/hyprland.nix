@@ -17,6 +17,8 @@
       env = [
         "XCURSOR_THEME,Windows 10"
         "XCURSOR_SIZE,24"
+        "HYPRCURSOR_THEME,rose-pine-hyprcursor"
+        "HYPRCURSOR_SIZE,28"
       ];
 
       "plugin:borders-plus-plus" = {
@@ -29,6 +31,8 @@
       "exec-once" = [
         "waybar"
         "hyprpaper"
+        "hyprctl setcursor Adwaita 24"
+        "mako"
       ];
 
       xwayland = {
@@ -43,6 +47,10 @@
         # Make the resize grab area near borders easier to hit (in px)
         extend_border_grab_area = 15;
       };
+
+      monitor = [
+        ",3440x1440,auto,1"
+      ];
 
       # input
       input = {
@@ -97,13 +105,18 @@
 
         # move window (vim-style + shift)
         "$mainMod SHIFT, h, movewindow, l"
-        "$mainMod SHIFT, j, movewindow, d"
-        "$mainMod SHIFT, k, movewindow, u"
+        "$mainMod SHIFT, j, movetoworkspacesilent, r+1"
+        "$mainMod SHIFT, k, movetoworkspacesilent, r-1"
         "$mainMod SHIFT, l, movewindow, r"
 
         # workspaces relative
         "$mainMod, e, workspace, r-1"
         "$mainMod, w, workspace, r+1"
+        "$mainMod SHIFT, e, movetoworkspace, r-1"
+        "$mainMod SHIFT, w, movetoworkspace, r+1"
+
+        # toggle floating on the focused window
+        "$mainMod, g, togglefloating"
 
         # fullscreen
         "$mainMod, m, fullscreen"

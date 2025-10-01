@@ -25,6 +25,8 @@
         # the tradeoff is increased power consumption. Defaults to
         # 'false'.
         FastConnectable = true;
+          ControllerMode = "dual";
+          Enable = "Source,Sink,Media,Socket";
       };
       Policy = {
         # Enable all controllers when they are found. This includes
@@ -36,6 +38,7 @@
   };
   services.blueman.enable = true;
   boot.kernelModules = [ "iwlwifi" "btusb" "rtw88_8822be"];
+  boot.kernelPackages = pkgs.linuxPackages_latest; 
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -46,7 +49,7 @@
 
   services.displayManager.sddm.enable = true;
   services.displayManager.sddm.wayland.enable = true;
-  #services.desktopManager.plasma6.enable = true;
+  services.desktopManager.plasma6.enable = false;
 
   services.gnome.gnome-keyring.enable = true;
 
@@ -96,17 +99,13 @@
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
   security.rtkit.enable = true;
-  services.pipewire = {
+ services.pipewire = {
     enable = true;
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
-    # If you want to use JACK applications, uncomment this
-    #jack.enable = true;
+    jack.enable = true;
 
-    # use the example session manager (no others are packaged yet so this is enabled by default,
-    # no need to redefine it in your config for now)
-    #media-session.enable = true;
   };
 
   # Enable touchpad support (enabled default in most desktopManager).
@@ -158,6 +157,8 @@
     blueman
     usbutils
     nodejs
+    mako
+    libnotify
 
     ripgrep
     gnumake
@@ -169,6 +170,7 @@
     wofi
     hyprshot
     imv
+    pulseaudio
     pavucontrol
     wdisplays
 
@@ -176,6 +178,7 @@
     kdePackages.kio-fuse #to mount remote filesystems via FUSE
     kdePackages.kio-extras #extra protocols support (sftp, fish and more)
     kdePackages.dolphin # This is the actual dolphin package
+  adwaita-icon-theme  # Adwaita cursor (includes cursors)
   ];
 
   nixpkgs.config.permittedInsecurePackages = [
