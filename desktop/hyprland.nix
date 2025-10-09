@@ -33,6 +33,7 @@
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
         "mako"
+        "hypridle"
       ];
 
       xwayland = {
@@ -49,7 +50,7 @@
       };
 
       monitor = [
-        ",3440x1440,auto,1"
+        ",3440x1440@240,auto,1"
       ];
 
       # input
@@ -93,6 +94,7 @@
         "$mainMod, Q, killactive"
         "$mainMod, F, exec, dolphin"
         "$mainMod, B, exec, firefox"
+        "$mainMod, C, exec, firefox https://t3.chat"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         # screenshot region to clipboard
         "$mainMod, p, exec, hyprshot -m region --clipboard-only"

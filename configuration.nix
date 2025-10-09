@@ -159,6 +159,7 @@
     nodejs
     mako
     libnotify
+    act
 
     ripgrep
     gnumake
@@ -184,6 +185,20 @@
   nixpkgs.config.permittedInsecurePackages = [
     "beekeeper-studio-5.1.5"
   ];
+
+  environment.etc."xdg/mako/config".text = ''
+    # Larger, persistent notifications until the user dismisses them
+    default-timeout=0
+    ignore-timeout=1
+    font=Sans 16
+    text-size=18
+    icon-size=64
+    width=420
+    margin=16
+    padding=20
+    border-size=2
+    on-button-left=exec sh -c 'makoctl invoke -n "$id" >/dev/null 2>&1 || true; makoctl dismiss -n "$id"'
+  '';
 
 
   security.polkit.enable = true;

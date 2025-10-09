@@ -30,6 +30,7 @@ in
     pkgs.hyprpaper
     pkgs.hyprlock
     pkgs.hyprshot
+    pkgs.hypridle
 
     myPython
 
@@ -96,6 +97,23 @@ in
   '';
   xdg.configFile."hypr/autostart.conf".text = ''
     hyprpaper &
+  '';
+  xdg.configFile."hypr/hypridle.conf".text = ''
+    general {
+      after_sleep_cmd = hyprctl dispatch dpms on
+    }
+
+    listener {
+      timeout = 180
+      on-timeout = hyprctl dispatch dpms off
+      on-resume = hyprctl dispatch dpms on
+    }
+
+    listener {
+      timeout = 3600
+      on-timeout = systemctl suspend
+      on-resume = hyprctl dispatch dpms on
+    }
   '';
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
