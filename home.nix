@@ -50,31 +50,6 @@ in
   nixpkgs.config.allowUnfree = true;
 
 
-  programs.vscode = {
-    enable = true;
-
-    profiles.default.userSettings = {
-      "python.analysis.typeCheckingMode" = "strict";
-      "explorer.confirmDelete" = false;
-
-      "vim.useSystemClipboard" = true;
-      "vim.hlsearch" = true;
-      "vim.incsearch" = true;
-      "vim.cursorStylePerMode.insert" = "line";
-      "vim.cursorStylePerMode.normal" = "block";
-      "vim.cursorStylePerMode.visual" = "block";
-    };
-    profiles.default.extensions = with pkgs.vscode-extensions; [
-      ms-python.python
-      ms-toolsai.jupyter
-      ms-toolsai.jupyter-keymap
-      ms-toolsai.jupyter-renderers
-      ms-python.vscode-pylance
-      vscodevim.vim
-    ];
-    mutableExtensionsDir = false;
-  };
-
   home.sessionVariables = {
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
     TERMINAL = "alacritty";
@@ -179,6 +154,7 @@ in
 
   imports = [
     ./programs/nvim.nix
+    ./programs/vscode.nix
     ./desktop/hyprland.nix
     ./desktop/waybar.nix
   ];
