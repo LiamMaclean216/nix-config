@@ -56,6 +56,13 @@ in
     profiles.default.userSettings = {
       "python.analysis.typeCheckingMode" = "strict";
       "explorer.confirmDelete" = false;
+
+      "vim.useSystemClipboard" = true;
+      "vim.hlsearch" = true;
+      "vim.incsearch" = true;
+      "vim.cursorStylePerMode.insert" = "line";
+      "vim.cursorStylePerMode.normal" = "block";
+      "vim.cursorStylePerMode.visual" = "block";
     };
     profiles.default.extensions = with pkgs.vscode-extensions; [
       ms-python.python
@@ -63,6 +70,7 @@ in
       ms-toolsai.jupyter-keymap
       ms-toolsai.jupyter-renderers
       ms-python.vscode-pylance
+      vscodevim.vim
     ];
     mutableExtensionsDir = false;
   };
