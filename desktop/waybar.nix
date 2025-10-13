@@ -61,16 +61,16 @@ in
 
       window#waybar {
         background: transparent;
-        color: #e5e9f0;
+        color: #d8deeb;
         padding: 0;
         margin: 0;
       }
 
       #modules-right {
-        background: rgba(20, 22, 36, 0.28);
+        background: rgba(8, 12, 24, 0.78);
         border-radius: 999px;
         padding: 8px 8px;
-        border: 1px solid rgba(180, 195, 255, 0.22);
+        border: 1px solid rgba(142, 162, 219, 0.35);
         box-shadow: 0 12px 32px rgba(5, 6, 11, 0.55);
       }
 
@@ -80,6 +80,7 @@ in
 
       #clock {
         letter-spacing: 0.5px;
+        color: #f5f7ff;
       }
     '';
   };

@@ -143,7 +143,6 @@
     lazygit
     git
     gh
-    vscode
     spotify
     neovim
     neovide
@@ -162,6 +161,8 @@
     act
 
     ripgrep
+    zip
+    unzip
     gnumake
     pciutils
     usbutils
@@ -179,6 +180,7 @@
     kdePackages.kio-fuse #to mount remote filesystems via FUSE
     kdePackages.kio-extras #extra protocols support (sftp, fish and more)
     kdePackages.dolphin # This is the actual dolphin package
+    kdePackages.ark # Provides Dolphin's right-click extract actions
   adwaita-icon-theme  # Adwaita cursor (includes cursors)
   ];
 
