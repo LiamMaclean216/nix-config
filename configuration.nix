@@ -85,7 +85,10 @@
     };
   };
 
-  virtualisation.docker.enable = true;
+  virtualisation.docker = {
+    enable = true;
+    rootless.enable = true;
+  };
 
   # Configure keymap in X11
   services.xserver.xkb = {
@@ -146,7 +149,6 @@
     spotify
     neovim
     neovide
-    claude-code
     beekeeper-studio
     awsebcli
     xclip
@@ -175,6 +177,7 @@
     pulseaudio
     pavucontrol
     wdisplays
+    wlogout
 
     kdePackages.qtsvg 
     kdePackages.kio-fuse #to mount remote filesystems via FUSE
@@ -250,6 +253,7 @@
     enable = true;
     desktopManager = { xterm.enable = true; };
   };
+
 
   # Switch to Hyprland (Wayland)
   programs.hyprland.enable = true;

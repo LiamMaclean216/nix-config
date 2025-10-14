@@ -17,6 +17,12 @@
       "editor.lineNumbers" = "relative";
       "notebook.lineNumbers" = "on";
       "notebook.relativeLineNumbers" = true;
+      "jupyter.askForKernelRestart" = false;
+      "python.analysis.inlayHints.variableTypes" = false;
+      "python.analysis.inlayHints.functionReturnTypes" = false;
+      "python.analysis.inlayHints.callArgumentNames" = "none";
+      "python.analysis.inlayHints.functionParameters" = "none";
+      "python.analysis.inlayHints.pytestParameters" = false;
     };
 
     profiles.default.extensions = with pkgs.vscode-extensions; [
@@ -26,6 +32,14 @@
       ms-toolsai.jupyter-renderers
       ms-python.vscode-pylance
       vscodevim.vim
+    ];
+
+    profiles.default.keybindings = [
+      {
+        "key" = "ctrl+w";
+        "command" = "workbench.action.closeActiveEditor";
+        "when" = "!terminalFocus";
+      }
     ];
 
     mutableExtensionsDir = false;

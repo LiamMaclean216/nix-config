@@ -67,13 +67,6 @@ in
     export PATH="$HOME/node_modules/bin:$PATH"
   '';
 
-  home.activation.npmInstallCodex =lib.hm.dag.entryAfter ["installPackages"] ''    
-  export PATH=${pkgs.nodejs}/bin:$PATH
-    mkdir -p $HOME/node_modules
-    if [ ! -x "$HOME/node_modules/bin/codex" ]; then
-      npm install -g @openai/codex --prefix $HOME/node_modules --ignore-scripts
-    fi
-  '';
 
   # Home Manager is pretty good at managing dotfiles. The primary way to manage
   # plain files is through 'home.file'.
@@ -155,6 +148,8 @@ in
   imports = [
     ./programs/nvim.nix
     ./programs/vscode.nix
+    ./programs/codex.nix
+    ./programs/claude-code.nix
     ./desktop/hyprland.nix
     ./desktop/waybar.nix
   ];

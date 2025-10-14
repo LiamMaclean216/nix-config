@@ -34,6 +34,7 @@
         "hyprctl setcursor Adwaita 24"
         "mako"
         "hypridle"
+        "wlogout"
       ];
 
       xwayland = {
@@ -98,6 +99,7 @@
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         # screenshot region to clipboard
         "$mainMod, p, exec, hyprshot -m region --clipboard-only"
+        "$mainMod, ESCAPE, exec, wlogout"
 
         # focus (vim-style)
         "$mainMod, h, movefocus, l"
