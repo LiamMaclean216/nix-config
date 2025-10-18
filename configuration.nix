@@ -149,6 +149,7 @@
     spotify
     neovim
     neovide
+    libreoffice
     beekeeper-studio
     awsebcli
     xclip
@@ -261,6 +262,30 @@
   services.displayManager.defaultSession = "hyprland";
 
   # XDG portal setup for Wayland (incl. Hyprland)
+  xdg.mime = {
+    enable = true;
+    defaultApplications = {
+      "application/msword" = [ "libreoffice-writer.desktop" ];
+      "application/vnd.ms-word.document.macroEnabled.12" = [ "libreoffice-writer.desktop" ];
+      "application/vnd.ms-word.template.macroEnabled.12" = [ "libreoffice-writer.desktop" ];
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "libreoffice-writer.desktop" ];
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template" = [ "libreoffice-writer.desktop" ];
+
+      "application/vnd.ms-excel" = [ "libreoffice-calc.desktop" ];
+      "application/vnd.ms-excel.sheet.macroEnabled.12" = [ "libreoffice-calc.desktop" ];
+      "application/vnd.ms-excel.template.macroEnabled.12" = [ "libreoffice-calc.desktop" ];
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = [ "libreoffice-calc.desktop" ];
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template" = [ "libreoffice-calc.desktop" ];
+
+      "application/vnd.ms-powerpoint" = [ "libreoffice-impress.desktop" ];
+      "application/vnd.ms-powerpoint.presentation.macroEnabled.12" = [ "libreoffice-impress.desktop" ];
+      "application/vnd.ms-powerpoint.template.macroEnabled.12" = [ "libreoffice-impress.desktop" ];
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation" = [ "libreoffice-impress.desktop" ];
+      "application/vnd.openxmlformats-officedocument.presentationml.template" = [ "libreoffice-impress.desktop" ];
+
+      "application/pdf" = [ "firefox.desktop" ];
+    };
+  };
   xdg.portal.enable = true;
   xdg.portal.extraPortals = with pkgs; [
     xdg-desktop-portal-hyprland

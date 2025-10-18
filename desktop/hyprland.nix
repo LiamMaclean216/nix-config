@@ -1,4 +1,38 @@
 { config, pkgs, lib, inputs, ... }:
+
+let
+  makoConfig = pkgs.writeText "mako-hyprland-config" ''
+    # Larger, persistent notifications until the user dismisses them
+    default-timeout=0
+    ignore-timeout=1
+    font=Sans 16
+    text-size=18
+    icon-size=64
+    width=420
+    margin=16
+    padding=20
+    border-size=2
+    on-button-left=exec sh -c 'makoctl invoke -n "$id" >/dev/null 2>&1 || true; makoctl dismiss -n "$id"'
+
+    [app-name=pyright]
+    ignore=1
+
+    [app-name=nvim]
+    ignore=1
+
+    [app-name=Alacritty]
+    ignore=1
+
+    [app-name=Spotify]
+    ignore=1
+  '';
+
+  # Dismiss existing notifications before launching the logout menu.
+  wlogoutWithClear = pkgs.writeShellScript "wlogout-clear-notifications" ''
+    ${pkgs.mako}/bin/makoctl dismiss --all || true
+    exec ${pkgs.wlogout}/bin/wlogout "$@"
+  '';
+in
 {
   wayland.windowManager.hyprland = {
     enable = true;
@@ -32,9 +66,8 @@
         "waybar"
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
-        "mako"
+        "${pkgs.mako}/bin/mako --config ${makoConfig}"
         "hypridle"
-        "wlogout"
       ];
 
       xwayland = {
@@ -99,7 +132,7 @@
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         # screenshot region to clipboard
         "$mainMod, p, exec, hyprshot -m region --clipboard-only"
-        "$mainMod, ESCAPE, exec, wlogout"
+        "$mainMod, ESCAPE, exec, ${wlogoutWithClear}"
 
         # focus (vim-style)
         "$mainMod, h, movefocus, l"
