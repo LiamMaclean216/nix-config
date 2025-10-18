@@ -158,6 +158,7 @@
     blueman
     usbutils
     nodejs
+    redisinsight
     mako
     libnotify
     act
@@ -268,7 +269,7 @@
 
   # Helpful on some NVIDIA setups using Wayland compositors
   environment.variables = {
-    OPENAI_API_KEY = "";
+    #OPENAI_API_KEY = "";
     #WLR_NO_HARDWARE_CURSORS = lib.mkDefault "1";
   };
 

@@ -14,7 +14,8 @@ hypr:
 
 # Cleanup boot entries
 cleanup:
-	nix-collect-garbage && nix-collect-garbage -d
+	nix-collect-garbage
+	nix-collect-garbage -d
 
 # Do everything: NixOS, Home Manager, then Hyprland reload
 all: nixos home hypr
