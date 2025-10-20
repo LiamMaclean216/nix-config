@@ -110,12 +110,6 @@ in
     }
   '';
 
-  # LazyDocker: skip the return prompt when exiting a view
-  xdg.configFile."lazydocker/config.yml".text =
-    lib.generators.toYAML {} {
-      gui.returnImmediately = true;
-    };
-
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
       VENV="$HOME/.venv"
       PYTHON="${pkgs.python311}/bin/python3"
@@ -156,6 +150,7 @@ in
     ./programs/vscode.nix
     ./programs/codex.nix
     ./programs/claude-code.nix
+    ./programs/lazydocker.nix
     ./desktop/hyprland.nix
     ./desktop/waybar.nix
   ];

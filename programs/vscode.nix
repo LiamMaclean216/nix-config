@@ -31,7 +31,7 @@
       ms-toolsai.jupyter-keymap
       ms-toolsai.jupyter-renderers
       ms-python.vscode-pylance
-      vscodevim.vim
+      #vscodevim.vim
     ];
 
     profiles.default.keybindings = [

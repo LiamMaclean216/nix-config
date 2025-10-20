@@ -165,6 +165,7 @@
     act
 
     ripgrep
+    mission-center
     zip
     unzip
     gnumake
@@ -193,31 +194,7 @@
     "beekeeper-studio-5.1.5"
   ];
 
-  environment.etc."xdg/mako/config".text = ''
-    # Larger, persistent notifications until the user dismisses them
-    default-timeout=0
-    ignore-timeout=1
-    font=Sans 16
-    text-size=18
-    icon-size=64
-    width=420
-    margin=16
-    padding=20
-    border-size=2
-    on-button-left=exec sh -c 'makoctl invoke -n "$id" >/dev/null 2>&1 || true; makoctl dismiss -n "$id"'
-
-    [app-name=pyright]
-    ignore=1
-
-    [app-name=nvim]
-    ignore=1
-
-    [app-name=Alacritty]
-    ignore=1
-
-    [app-name=Spotify]
-    ignore=1
-  '';
+  environment.etc."xdg/mako/config".source = ./desktop/mako/config;
 
 
   security.polkit.enable = true;
@@ -265,23 +242,23 @@
   xdg.mime = {
     enable = true;
     defaultApplications = {
-      "application/msword" = [ "libreoffice-writer.desktop" ];
-      "application/vnd.ms-word.document.macroEnabled.12" = [ "libreoffice-writer.desktop" ];
-      "application/vnd.ms-word.template.macroEnabled.12" = [ "libreoffice-writer.desktop" ];
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "libreoffice-writer.desktop" ];
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.template" = [ "libreoffice-writer.desktop" ];
+      "application/msword" = [ "writer.desktop" ];
+      "application/vnd.ms-word.document.macroEnabled.12" = [ "writer.desktop" ];
+      "application/vnd.ms-word.template.macroEnabled.12" = [ "writer.desktop" ];
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "writer.desktop" ];
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template" = [ "writer.desktop" ];
 
-      "application/vnd.ms-excel" = [ "libreoffice-calc.desktop" ];
-      "application/vnd.ms-excel.sheet.macroEnabled.12" = [ "libreoffice-calc.desktop" ];
-      "application/vnd.ms-excel.template.macroEnabled.12" = [ "libreoffice-calc.desktop" ];
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = [ "libreoffice-calc.desktop" ];
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.template" = [ "libreoffice-calc.desktop" ];
+      "application/vnd.ms-excel" = [ "calc.desktop" ];
+      "application/vnd.ms-excel.sheet.macroEnabled.12" = [ "calc.desktop" ];
+      "application/vnd.ms-excel.template.macroEnabled.12" = [ "calc.desktop" ];
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = [ "calc.desktop" ];
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template" = [ "calc.desktop" ];
 
-      "application/vnd.ms-powerpoint" = [ "libreoffice-impress.desktop" ];
-      "application/vnd.ms-powerpoint.presentation.macroEnabled.12" = [ "libreoffice-impress.desktop" ];
-      "application/vnd.ms-powerpoint.template.macroEnabled.12" = [ "libreoffice-impress.desktop" ];
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation" = [ "libreoffice-impress.desktop" ];
-      "application/vnd.openxmlformats-officedocument.presentationml.template" = [ "libreoffice-impress.desktop" ];
+      "application/vnd.ms-powerpoint" = [ "impress.desktop" ];
+      "application/vnd.ms-powerpoint.presentation.macroEnabled.12" = [ "impress.desktop" ];
+      "application/vnd.ms-powerpoint.template.macroEnabled.12" = [ "impress.desktop" ];
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation" = [ "impress.desktop" ];
+      "application/vnd.openxmlformats-officedocument.presentationml.template" = [ "impress.desktop" ];
 
       "application/pdf" = [ "firefox.desktop" ];
     };
