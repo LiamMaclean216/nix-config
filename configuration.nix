@@ -165,6 +165,7 @@
     act
 
     ripgrep
+    fastfetch
     mission-center
     zip
     unzip

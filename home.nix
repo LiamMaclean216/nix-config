@@ -142,15 +142,13 @@ in
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 
-  # Alacritty terminal
-  programs.alacritty.enable = true;
-
   imports = [
     ./programs/nvim.nix
     ./programs/vscode.nix
     ./programs/codex.nix
     ./programs/claude-code.nix
     ./programs/lazydocker.nix
+    ./programs/fastfetch.nix
     ./desktop/hyprland.nix
     ./desktop/waybar.nix
   ];
