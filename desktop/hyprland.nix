@@ -61,9 +61,7 @@ in
   wayland.windowManager.hyprland = {
     enable = true;
 
-    plugins = [
-      inputs.hyprland-plugins.packages.${pkgs.stdenv.hostPlatform.system}.borders-plus-plus
-    ];
+    plugins = [];
 
     # Export user environment to systemd (fixes PATH in services)
     systemd.variables = [ "--all" ];
@@ -71,23 +69,13 @@ in
     # Declarative Hyprland config translated from hyprland.conf
     extraConfig = ''
       source = ~/.cache/wal/colors-hyprland.conf
-
-      plugin {
-        borders-plus-plus {
-          add_borders = 1
-          col.border_1 = $color4
-          col.border_2 = $color5
-          border_size_1 = 3
-          border_size_2 = -1
-        }
-      }
     '';
 
     settings = {
       "$mainMod" = "SUPER";
 
       env = [
-        "XCURSOR_THEME,Windows 10"
+        "XCURSOR_THEME,Adwaita"
         "XCURSOR_SIZE,24"
         "HYPRCURSOR_THEME,rose-pine-hyprcursor"
         "HYPRCURSOR_SIZE,28"
@@ -114,10 +102,10 @@ in
       general = {
         gaps_in = 5;
         gaps_out = 10;
-        # Allow resizing by dragging window edges/corners
         resize_on_border = true;
-        # Make the resize grab area near borders easier to hit (in px)
-        extend_border_grab_area = 15;
+        "col.active_border" = "0xaaffffff";
+        "col.inactive_border" = "0x00000000";
+        border_size = 1;
       };
 
       monitor = [
@@ -200,6 +188,12 @@ in
         ", XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -10%"
         ", XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle"
         ", XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+      ];
+
+      # mouse bindings
+      bindm = [
+        "$mainMod, mouse:272, movewindow"
+        "$mainMod, mouse:273, resizewindow"
       ];
 
       windowrulev2 = [
