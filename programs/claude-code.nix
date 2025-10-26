@@ -20,7 +20,7 @@ in {
   home.file.".claude/anthropic_key.sh" = {
     text = ''
       #!/usr/bin/env bash
-      echo "sk-your-anthropic-key"
+      echo "KEY"
     '';
     executable = true;
   };

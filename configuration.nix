@@ -269,6 +269,12 @@
     xdg-desktop-portal-hyprland
     xdg-desktop-portal-gtk
   ];
+  xdg.portal.config = {
+    common = {
+      default = [ "hyprland" "gtk" ];
+      "org.freedesktop.portal.Notification" = [ "gtk" ];
+    };
+  };
 
   # Helpful on some NVIDIA setups using Wayland compositors
   environment.variables = {

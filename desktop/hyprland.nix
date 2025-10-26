@@ -25,6 +25,7 @@ let
 
     [app-name=Spotify]
     ignore=1
+
   '';
 
   # Dismiss existing notifications before launching the logout menu.
@@ -45,6 +46,20 @@ in
     systemd.variables = [ "--all" ];
 
     # Declarative Hyprland config translated from hyprland.conf
+    extraConfig = ''
+      source = ~/.cache/wal/colors-hyprland.conf
+
+      plugin {
+        borders-plus-plus {
+          add_borders = 1
+          col.border_1 = $color4
+          col.border_2 = $color5
+          border_size_1 = 3
+          border_size_2 = -1
+        }
+      }
+    '';
+
     settings = {
       "$mainMod" = "SUPER";
 
@@ -53,17 +68,15 @@ in
         "XCURSOR_SIZE,24"
         "HYPRCURSOR_THEME,rose-pine-hyprcursor"
         "HYPRCURSOR_SIZE,28"
+        "XDG_CURRENT_DESKTOP,Hyprland"
+        "XDG_SESSION_TYPE,wayland"
+        "XDG_SESSION_DESKTOP,Hyprland"
       ];
-
-      "plugin:borders-plus-plus" = {
-        add_borders = 1;
-        top_border_color = "rgba(173, 216, 230, 1)";
-        top_border_width = 3;
-      };
 
       # startup
       "exec-once" = [
-        "waybar"
+        "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
+        "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
         "${pkgs.mako}/bin/mako --config ${makoConfig}"

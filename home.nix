@@ -19,11 +19,7 @@ in
   # release notes.
   home.stateVersion = "25.05"; # Please read the comment before changing.
 
-  # The home.packages option allows you to install Nix packages into your
-  # environment.
   home.packages = [
-    # # Adds the 'hello' command to your environment. It prints a friendly
-    # # "Hello, world!" when run.
     pkgs.hello
     pkgs.lazygit
     pkgs.wl-clipboard
@@ -33,19 +29,6 @@ in
     pkgs.hypridle
 
     myPython
-
-    # # It is sometimes useful to fine-tune packages, for example, by applying
-    # # overrides. You can do that directly here, just don't forget the
-    # # parentheses. Maybe you want to install Nerd Fonts with a limited number of
-    # # fonts?
-    # (pkgs.nerdfonts.override { fonts = [ "FantasqueSansMono" ]; })
-
-    # # You can also create simple shell scripts directly inside your
-    # # configuration. For example, this adds a command 'my-hello' to your
-    # # environment:
-    # (pkgs.writeShellScriptBin "my-hello" ''
-    #   echo "Hello, ${config.home.username}!"
-    # '')
   ];
   nixpkgs.config.allowUnfree = true;
 
@@ -56,7 +39,7 @@ in
   };
 
 # ensure $HOME/node_modules/bin is on PATH at shell runtime
-  home.file.".profile".text = ''
+    home.file.".profile".text = ''
     if [ -d "$HOME/node_modules/bin" ] && ! echo "$PATH" | grep -q "$HOME/node_modules/bin"; then
       export PATH="$HOME/node_modules/bin:$PATH"
     fi
@@ -68,8 +51,6 @@ in
   '';
 
 
-  # Home Manager is pretty good at managing dotfiles. The primary way to manage
-  # plain files is through 'home.file'.
   # Ensure ~/venv exists with pynvim
   home.file.".venv/.keep".text = ''
       # placeholder to create venv folder
@@ -79,6 +60,28 @@ in
       source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wofi");
       recursive = true;
   };
+
+  # Pywal template for Hyprland colors
+  home.file.".config/wal/templates/colors-hyprland.conf".text = ''
+    $background = rgb({background.strip})
+    $foreground = rgb({foreground.strip})
+    $color0 = rgb({color0.strip})
+    $color1 = rgb({color1.strip})
+    $color2 = rgb({color2.strip})
+    $color3 = rgb({color3.strip})
+    $color4 = rgb({color4.strip})
+    $color5 = rgb({color5.strip})
+    $color6 = rgb({color6.strip})
+    $color7 = rgb({color7.strip})
+    $color8 = rgb({color8.strip})
+    $color9 = rgb({color9.strip})
+    $color10 = rgb({color10.strip})
+    $color11 = rgb({color11.strip})
+    $color12 = rgb({color12.strip})
+    $color13 = rgb({color13.strip})
+    $color14 = rgb({color14.strip})
+    $color15 = rgb({color15.strip})
+  '';
 
 
   # Hyprland configuration moved to module file
@@ -119,6 +122,11 @@ in
       fi
   '';
 
+  # Generate pywal color scheme from background image
+  home.activation.generatePywalColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.png -n -q -s -t
+  '';
+
   # Home Manager can also manage your environment variables through
   # 'home.sessionVariables'. These will be explicitly sourced when using a
   # shell provided by Home Manager. If you don't want to manage your shell
@@ -150,7 +158,6 @@ in
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
     ./desktop/hyprland.nix
-    ./desktop/waybar.nix
   ];
 
 }

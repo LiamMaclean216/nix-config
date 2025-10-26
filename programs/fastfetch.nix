@@ -9,19 +9,27 @@ let
 
     target_shell="''${SHELL:-${pkgs.bashInteractive}/bin/bash}"
     exec "$target_shell" "$@"
-  '';
+    '';
 in {
   home.file.".config/fastfetch/config.jsonc".text = ''
     {
       "$schema": "https://raw.githubusercontent.com/fastfetch-cli/fastfetch/master/doc/json_schema.json",
       "logo": {
-        "type": "preset",
-        "preset": "nixos_small",
+        "source": "nixos_xlarge",
         "padding": {
-          "left": 1
+          "left": 4,
+          "top": 2,
+          "bottom": 2
         }
       },
       "modules": [
+        { "type": "custom", "format": " " },
+        { "type": "custom", "format": " " },
+        { "type": "custom", "format": " " },
+        { "type": "custom", "format": " " },
+        { "type": "custom", "format": " " },
+        { "type": "custom", "format": " " },
+        { "type": "custom", "format": " " },
         {
           "type": "title",
           "separator": " ❄ ",
@@ -78,7 +86,7 @@ in {
   programs.alacritty = {
     enable = true;
     settings = {
-      shell.program = "${fastfetchLauncher}/bin/alacritty-fastfetch";
+      terminal.shell.program = "${fastfetchLauncher}/bin/alacritty-fastfetch";
     };
   };
 }
