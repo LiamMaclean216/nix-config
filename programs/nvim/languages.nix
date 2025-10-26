@@ -1,0 +1,87 @@
+{ config, pkgs, lib, ... }:
+
+{
+  programs.nvf.settings.vim = {
+    languages = {
+      # Python (includes Django support via LSP)
+      python = {
+        enable = true;
+        treesitter.enable = true;
+        lsp = {
+          enable = true;
+          server = "pyright";
+        };
+        format.enable = true;
+      };
+
+      # Go
+      go = {
+        enable = true;
+        treesitter.enable = true;
+        lsp = {
+          enable = true;
+          server = "gopls";
+        };
+        format.enable = true;
+      };
+
+      # Nix
+      nix = {
+        enable = true;
+        treesitter.enable = true;
+        lsp = {
+          enable = true;
+          server = "nixd";
+        };
+        format.enable = true;
+      };
+
+      # HTML
+      html = {
+        enable = true;
+        treesitter.enable = true;
+        lsp.enable = true;
+      };
+
+      # Tailwind CSS
+      tailwind = {
+        enable = true;
+        lsp.enable = true;
+      };
+
+      # TypeScript/JavaScript
+      ts = {
+        enable = true;
+        treesitter.enable = true;
+        lsp = {
+          enable = true;
+          server = "ts_ls";
+        };
+        format.enable = true;
+      };
+
+      # YAML
+      yaml = {
+        enable = true;
+        treesitter.enable = true;
+        lsp.enable = true;
+      };
+
+      # CSS (useful alongside Tailwind)
+      css = {
+        enable = true;
+        treesitter.enable = true;
+        lsp.enable = true;
+      };
+    };
+
+    # Enable LSP globally
+    lsp.enable = true;
+
+    # Enable treesitter globally
+    treesitter = {
+      enable = true;
+      fold = true;
+    };
+  };
+}

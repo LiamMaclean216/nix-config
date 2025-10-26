@@ -16,10 +16,13 @@
         preventJunkFiles = true;
 
         theme = {
-          enable = true;
-          name = "gruvbox";
-          style = "dark";
+          enable = false;
         };
+
+        # Add melange colorscheme plugin
+        startPlugins = with pkgs.vimPlugins; [
+          melange-nvim
+        ];
 
         # Load custom Lua configuration from this repo
         additionalRuntimePaths = [ .nvim/lua ];
@@ -27,6 +30,11 @@
         luaConfigRC.myconfig-dir = ''
             require("config")
           '';
+
+        # Set melange colorscheme
+        luaConfigRC.melange-colorscheme = ''
+          vim.cmd.colorscheme('melange')
+        '';
       };
     };
   };
