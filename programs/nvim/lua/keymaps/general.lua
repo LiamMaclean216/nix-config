@@ -1,6 +1,11 @@
 -- General keymaps
 local opts = { noremap = true, silent = true }
 
+-- Neo-tree toggle/focus
+vim.keymap.set("n", "<C-e>", function()
+	ToggleNeotree()
+end, { desc = "Toggle/focus Neo-tree", silent = true })
+
 -- Center cursor on search
 vim.api.nvim_set_keymap("n", "n", "nzzzv", opts)
 vim.api.nvim_set_keymap("n", "N", "Nzzzv", opts)
