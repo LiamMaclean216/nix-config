@@ -6,6 +6,9 @@
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
     codex-nix.url = "github:sadjow/codex-nix";
 
+    nvf.url = "github:notashelf/nvf";
+    nvf.inputs.nixpkgs.follows = "nixpkgs";
+
     hyprland.url = "github:hyprwm/Hyprland";
 
     hyprland-plugins = {
@@ -14,7 +17,7 @@
     };
   };
 
-  outputs = inputs@{self, nixpkgs, home-manager, ...}: 
+  outputs = inputs@{self, nixpkgs, home-manager, nvf, ...}:
     let
       lib = nixpkgs.lib;
       system = "x86_64-linux";
@@ -30,7 +33,10 @@
       homeConfigurations = {
         liam = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
-          modules = [ ./home.nix ];
+          modules = [
+            nvf.homeManagerModules.default
+            ./home.nix
+          ];
           extraSpecialArgs = { inherit inputs; };
         };
       };

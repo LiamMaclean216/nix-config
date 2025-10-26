@@ -142,7 +142,7 @@ in
   programs.home-manager.enable = true;
 
   imports = [
-    ./programs/nvim.nix
+    ./programs/nvim/nvim.nix
     ./programs/vscode.nix
     ./programs/codex.nix
     ./programs/claude-code.nix
