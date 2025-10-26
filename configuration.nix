@@ -47,8 +47,18 @@
   networking.hostName = "nixos"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
-  services.displayManager.sddm.enable = true;
-  services.displayManager.sddm.wayland.enable = true;
+  # Use greetd for auto-login to Hyprland with hyprlock
+  services.greetd = {
+    enable = true;
+    settings = rec {
+      initial_session = {
+        command = "Hyprland > /dev/null 2>&1";
+        user = "liam";
+      };
+      default_session = initial_session;
+    };
+  };
+
   services.desktopManager.plasma6.enable = false;
 
   services.gnome.gnome-keyring.enable = true;
@@ -237,7 +247,9 @@
 
   # Switch to Hyprland (Wayland)
   programs.hyprland.enable = true;
-  services.displayManager.defaultSession = "hyprland";
+
+  # PAM entry so hyprlock can authenticate
+  security.pam.services.hyprlock = {};
 
   # XDG portal setup for Wayland (incl. Hyprland)
   xdg.mime = {

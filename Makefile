@@ -7,6 +7,7 @@ nixos:
 # Rebuild and switch Home Manager from this flake
 home:
 	home-manager switch --flake .#liam
+	hyprctl reload
 
 # Reload Hyprland config
 hypr:

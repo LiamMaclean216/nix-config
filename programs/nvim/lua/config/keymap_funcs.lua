@@ -21,6 +21,7 @@ local languages = {
   "vue",
   "svelte",
   "java",
+  "nix",
 }
 
 function EnterNormalMode()

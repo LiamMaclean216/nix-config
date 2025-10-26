@@ -24,12 +24,12 @@ in
     pkgs.lazygit
     pkgs.wl-clipboard
     pkgs.hyprpaper
-    pkgs.hyprlock
     pkgs.hyprshot
     pkgs.hypridle
 
     myPython
   ];
+  programs.hyprlock.enable = true;
   nixpkgs.config.allowUnfree = true;
 
 
@@ -61,28 +61,10 @@ in
       recursive = true;
   };
 
-  # Pywal template for Hyprland colors
-  home.file.".config/wal/templates/colors-hyprland.conf".text = ''
-    $background = rgb({background.strip})
-    $foreground = rgb({foreground.strip})
-    $color0 = rgb({color0.strip})
-    $color1 = rgb({color1.strip})
-    $color2 = rgb({color2.strip})
-    $color3 = rgb({color3.strip})
-    $color4 = rgb({color4.strip})
-    $color5 = rgb({color5.strip})
-    $color6 = rgb({color6.strip})
-    $color7 = rgb({color7.strip})
-    $color8 = rgb({color8.strip})
-    $color9 = rgb({color9.strip})
-    $color10 = rgb({color10.strip})
-    $color11 = rgb({color11.strip})
-    $color12 = rgb({color12.strip})
-    $color13 = rgb({color13.strip})
-    $color14 = rgb({color14.strip})
-    $color15 = rgb({color15.strip})
-  '';
-
+  home.file.".config/wlogout" = {
+      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wlogout");
+      recursive = true;
+  };
 
   # Hyprland configuration moved to module file
   #home.file.".config/hypr/hyprland.conf".source = ./desktop/hyprland.conf;
@@ -98,6 +80,12 @@ in
   xdg.configFile."hypr/hypridle.conf".text = ''
     general {
       after_sleep_cmd = hyprctl dispatch dpms on
+      lock_cmd = pidof hyprlock || hyprlock
+    }
+
+    listener {
+      timeout = 150
+      on-timeout = loginctl lock-session
     }
 
     listener {
@@ -113,6 +101,8 @@ in
     }
   '';
 
+  home.file.".config/hypr/hyprlock.conf".source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/hyprlock.conf");
+
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
       VENV="$HOME/.venv"
       PYTHON="${pkgs.python311}/bin/python3"
@@ -124,6 +114,7 @@ in
 
   # Generate pywal color scheme from background image
   home.activation.generatePywalColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      rm -rf "$HOME/.cache/wal"
       ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.png -n -q -s -t
   '';
 
