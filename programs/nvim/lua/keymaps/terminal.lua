@@ -5,30 +5,31 @@ Funcs = require("config.keymaps.funcs")
 local all_modes = { "n", "i", "v", "t", "c", "s" }
 local opts = { noremap = true, silent = true }
 
--- Lazygit
-vim.keymap.set("n", "<C-g>", function()
-	Snacks.terminal("lazygit", {
-		esc_esc = true,
-		ctrl_hjkl = false,
-		win = {
-			position = "float",
-			width = 0.8,
-			height = 0.8,
-		},
-	})
-end, { desc = "Lazygit" })
+-- Setup toggleterm terminals
+local Terminal = require("toggleterm.terminal").Terminal
 
 -- Lazydocker
+local lazydocker = Terminal:new({
+	cmd = "lazydocker",
+	direction = "float",
+	float_opts = {
+		width = function()
+			return math.floor(vim.o.columns * 0.8)
+		end,
+		height = function()
+			return math.floor(vim.o.lines * 0.8)
+		end,
+	},
+	hidden = true,
+	on_open = function(term)
+		vim.keymap.set("t", "q", function()
+			term:close()
+		end, { buffer = term.bufnr, noremap = true, silent = true })
+	end,
+})
+
 vim.keymap.set("n", "<C-v>", function()
-	Snacks.terminal("lazydocker", {
-		esc_esc = true,
-		ctrl_hjkl = false,
-		win = {
-			position = "float",
-			width = 0.8,
-			height = 0.8,
-		},
-	})
+	lazydocker:toggle()
 end, { desc = "Lazydocker" })
 
 -- Claude Code terminal
@@ -42,16 +43,27 @@ vim.keymap.set("n", "<C-S-c>", function()
 end, { desc = "Claude Code with current file" })
 
 -- Bottom terminal
+local bottom_terminal = Terminal:new({
+	direction = "float",
+	float_opts = {
+		width = function()
+			return math.floor(vim.o.columns * 0.8)
+		end,
+		height = function()
+			return math.floor(vim.o.lines * 0.8)
+		end,
+	},
+	hidden = true,
+	on_open = function(term)
+		vim.keymap.set("t", "q", function()
+			term:close()
+		end, { buffer = term.bufnr, noremap = true, silent = true })
+	end,
+})
+
 vim.keymap.set(all_modes, "<C-/>", function()
-	Snacks.terminal(nil, {
-		esc_esc = true,
-		ctrl_hjkl = false,
-		win = {
-			position = "bottom",
-			height = 0.30,
-		},
-	})
-end, { desc = "Terminal Bottom" })
+	bottom_terminal:toggle()
+end, { desc = "Terminal Float" })
 
 -- System paste in all modes
 vim.keymap.set(all_modes, "<C-S-v>", function()

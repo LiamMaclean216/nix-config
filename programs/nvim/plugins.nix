@@ -14,4 +14,14 @@
   };
 
   programs.nvf.settings.vim.filetree.neo-tree.enable = true;
+  programs.nvf.settings.vim.tabline.nvimBufferline.enable = true;
+
+  programs.nvf.settings.vim.terminal.toggleterm = {
+    enable = true;
+    lazygit = {
+      enable = true;
+      direction = "float";
+      mappings.open = "<C-g>";
+    };
+  };
 }

@@ -91,6 +91,7 @@ in
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
         "${pkgs.mako}/bin/mako --config ${makoConfig}"
+        "waybar"
         "hypridle"
         "hyprlock || hyprctl dispatch exit"
       ];
