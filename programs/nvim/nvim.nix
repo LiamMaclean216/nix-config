@@ -2,14 +2,8 @@
 
 {
   imports = [
-    ./options.nix
-    ./languages.nix
-    ./ui.nix
-    ./plugins.nix
     ./telescope.nix
-    ./autocmds.nix
-    ./keymaps.nix
-    ./functions.nix
+    ./comment-nvim.nix
   ];
 
   programs.nvf = {
@@ -20,6 +14,9 @@
         viAlias = true;
         vimAlias = true;
         preventJunkFiles = true;
+
+        # Load custom Lua configuration from this repo
+        additionalRuntimePaths = [ ./lua ];
       };
     };
   };
