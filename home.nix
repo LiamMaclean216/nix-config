@@ -66,6 +66,11 @@ in
       recursive = true;
   };
 
+  home.file.".config/nvf/lua/config" = {
+      source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
+      recursive = true;
+  };
+
   # Hyprland configuration moved to module file
   #home.file.".config/hypr/hyprland.conf".source = ./desktop/hyprland.conf;
 

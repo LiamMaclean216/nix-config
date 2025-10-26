@@ -12,4 +12,6 @@
       }
     ];
   };
+
+  vim.filetree.neotree.enable = true;
 }

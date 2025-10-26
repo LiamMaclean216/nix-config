@@ -2,7 +2,7 @@
 
 {
   imports = [
-    ./telescope.nix
+    ./plugins.nix
     ./comment-nvim.nix
   ];
 
@@ -15,8 +15,18 @@
         vimAlias = true;
         preventJunkFiles = true;
 
+        theme = {
+          enable = true;
+          name = "gruvbox";
+          style = "dark";
+        };
+
         # Load custom Lua configuration from this repo
-        additionalRuntimePaths = [ ./lua ];
+        additionalRuntimePaths = [ .nvim/lua ];
+
+        luaConfigRC.myconfig-dir = ''
+            require("config")
+          '';
       };
     };
   };

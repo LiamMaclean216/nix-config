@@ -4,48 +4,49 @@ local actions = require("telescope.actions")
 
 telescope.setup({
 	defaults = {
-		prompt_prefix = "🔍 ",
-		selection_caret = "➜ ",
-		path_display = { "truncate" },
-
 		mappings = {
 			i = {
-				["<C-j>"] = actions.move_selection_next,
-				["<C-k>"] = actions.move_selection_previous,
-				["<C-q>"] = actions.send_to_qflist + actions.open_qflist,
 				["<esc>"] = actions.close,
 			},
 			n = {
-				["<C-q>"] = actions.send_to_qflist + actions.open_qflist,
+				["<esc>"] = actions.close,
 			},
 		},
-
-		-- Layout and preview
-		layout_strategy = "horizontal",
 		layout_config = {
-			horizontal = {
-				prompt_position = "top",
-				preview_width = 0.55,
-				results_width = 0.8,
-			},
-			vertical = {
-				mirror = false,
-			},
-			width = 0.87,
-			height = 0.80,
-			preview_cutoff = 120,
+			-- width = 0.5,
+			-- height = 0.5, -- You can adjust this value (0-1 for percentage of screen)
 		},
-
-		sorting_strategy = "ascending",
 		file_ignore_patterns = {
-			"node_modules",
+			-- Git
 			".git/",
-			"dist/",
-			"build/",
-			"*.lock",
+
+			-- Node
+			"node_modules",
+
+			-- Python
+			"__pycache__",
+			".pytest_cache",
+			".venv",
+			"venv",
+
+			-- Build output
+			"dist",
+			"build",
+			"target",
+
+			-- Cache and temp files
+			".cache",
+			"%.o",
+			"%.a",
+			"%.out",
+			"%.class",
+			"%.pdf",
+
+			-- Editor files
+			".vscode",
+			".idea",
 		},
 
-		-- Performance
 		vimgrep_arguments = {
 			"rg",
 			"--color=never",
@@ -54,29 +55,13 @@ telescope.setup({
 			"--line-number",
 			"--column",
 			"--smart-case",
-		},
-	},
-
-	pickers = {
-		find_files = {
-			theme = "dropdown",
-			previewer = false,
-			hidden = true,
-		},
-		live_grep = {
-			additional_args = function()
-				return { "--hidden" }
-			end,
-		},
-		buffers = {
-			theme = "dropdown",
-			previewer = false,
-			sort_lastused = true,
-			mappings = {
-				i = {
-					["<c-d>"] = actions.delete_buffer,
-				},
-			},
+			-- Exclude directories via ripgrep glob patterns
+			"--glob=!node_modules/**",
+			"--glob=!.git/**",
+			"--glob=!**/__pycache__/**",
+			"--glob=!**/.pytest_cache/**",
+			"--glob=!**/venv/**",
+			"--glob=!**/.venv/**",
 		},
 	},
 
