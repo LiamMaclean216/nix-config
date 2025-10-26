@@ -40,7 +40,6 @@
       html = {
         enable = true;
         treesitter.enable = true;
-        lsp.enable = true;
       };
 
       # Tailwind CSS
@@ -57,7 +56,6 @@
           enable = true;
           server = "ts_ls";
         };
-        format.enable = true;
       };
 
       # YAML

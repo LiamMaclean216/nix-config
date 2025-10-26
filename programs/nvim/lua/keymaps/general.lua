@@ -23,5 +23,6 @@ vim.api.nvim_set_keymap("n", "<leader>p", "'_dp", opts)
 vim.api.nvim_set_keymap("n", "<C-a>", "ggVG", opts)
 
 -- LSP keymaps
+vim.api.nvim_set_keymap("n", "gd", "<cmd>lua vim.lsp.buf.definition()<CR>", opts)
 vim.api.nvim_set_keymap("n", "<F2>", "<cmd>lua vim.lsp.buf.rename()<CR>", opts)
 vim.api.nvim_set_keymap("n", "<A-S-f>", ":lua vim.lsp.buf.format()<CR>", opts)

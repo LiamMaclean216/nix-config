@@ -4,6 +4,7 @@
   imports = [
     ./plugins.nix
     ./comment-nvim.nix
+    ./languages.nix
   ];
 
   programs.nvf = {

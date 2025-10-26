@@ -141,6 +141,9 @@ end
 --   end
 -- end
 
+-- Claude terminal instance
+local claude_terminal = nil
+
 function M.OpenClaudeTerminal(file_reference)
 	M.CloseAllExceptCurrent()
 	-- Fit windows to make room for terminal
@@ -149,30 +152,27 @@ function M.OpenClaudeTerminal(file_reference)
 		return
 	end
 
-	local claude_term_params = {
-		esc_esc = true,
-		ctrl_hjkl = false,
-		win = {
-			position = "right",
-			width = 0.33,
-		},
-	}
-	local terminal_command = "claude"
-	--local terminal_command = "codex"
+	-- Initialize the claude terminal on first use
+	if not claude_terminal then
+		local Terminal = require("toggleterm.terminal").Terminal
+		claude_terminal = Terminal:new({
+			cmd = "claude",
+			direction = "vertical",
+			size = function()
+				return math.floor(vim.o.columns * 0.33)
+			end,
+			hidden = true,
+		})
+	end
 
-	local term = Snacks.terminal.get(terminal_command, claude_term_params)
-	if term and term.win and vim.api.nvim_win_is_valid(term.win) then
-		vim.api.nvim_set_current_win(term.win)
-		if file_reference then
+	-- Toggle the terminal
+	claude_terminal:toggle()
+
+	-- If file reference provided, insert it into the terminal
+	if file_reference then
+		vim.defer_fn(function()
 			vim.fn.feedkeys("@" .. file_reference .. " ")
-		end
-	else
-		Snacks.terminal(terminal_command, claude_term_params)
-		if file_reference then
-			vim.defer_fn(function()
-				vim.fn.feedkeys("@" .. file_reference .. " ")
-			end, 100)
-		end
+		end, 100)
 	end
 end
 

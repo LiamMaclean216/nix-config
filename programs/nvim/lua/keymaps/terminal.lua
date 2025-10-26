@@ -44,21 +44,8 @@ end, { desc = "Claude Code with current file" })
 
 -- Bottom terminal
 local bottom_terminal = Terminal:new({
-	direction = "float",
-	float_opts = {
-		width = function()
-			return math.floor(vim.o.columns * 0.8)
-		end,
-		height = function()
-			return math.floor(vim.o.lines * 0.8)
-		end,
-	},
+	direction = "horizontal",
 	hidden = true,
-	on_open = function(term)
-		vim.keymap.set("t", "q", function()
-			term:close()
-		end, { buffer = term.bufnr, noremap = true, silent = true })
-	end,
 })
 
 vim.keymap.set(all_modes, "<C-/>", function()
