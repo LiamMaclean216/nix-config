@@ -22,6 +22,10 @@ vim.api.nvim_set_keymap("n", "<leader>p", "'_dp", opts)
 -- Select all
 vim.api.nvim_set_keymap("n", "<C-a>", "ggVG", opts)
 
+-- Save file with Ctrl+S
+vim.api.nvim_set_keymap("n", "<C-s>", "<cmd>w<CR>", opts)
+vim.api.nvim_set_keymap("i", "<C-s>", "<Esc><cmd>w<CR>", opts)
+
 -- LSP keymaps
 vim.api.nvim_set_keymap("n", "gd", "<cmd>lua vim.lsp.buf.definition()<CR>", opts)
 vim.api.nvim_set_keymap("n", "<F2>", "<cmd>lua vim.lsp.buf.rename()<CR>", opts)
