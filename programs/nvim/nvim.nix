@@ -20,6 +20,9 @@
           enable = false;
         };
 
+        # Enable auto-completion with nvim-cmp
+        autocomplete.enable = true;
+
         # Add melange colorscheme plugin
         startPlugins = with pkgs.vimPlugins; [
           melange-nvim

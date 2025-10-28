@@ -104,9 +104,13 @@ in
         gaps_in = 5;
         gaps_out = 10;
         resize_on_border = true;
-        "col.active_border" = "0xaaffffff";
+        "col.active_border" = "0x88ffffff";
         "col.inactive_border" = "0x00000000";
         border_size = 1;
+      };
+
+      decoration = {
+        rounding = 8;
       };
 
       monitor = [

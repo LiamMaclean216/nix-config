@@ -9,9 +9,12 @@
         treesitter.enable = true;
         lsp = {
           enable = true;
-          server = "pyright";
+          server = "pyright";  # Provides inline diagnostics, type checking, and auto-imports
         };
-        format.enable = true;
+        format = {
+          enable = true;
+          type = "ruff";  # Fast linter and formatter
+        };
       };
 
       # Go
