@@ -26,6 +26,7 @@ in
     pkgs.hyprpaper
     pkgs.hyprshot
     pkgs.hypridle
+    pkgs.ruff
 
     myPython
   ];
@@ -78,9 +79,6 @@ in
   home.file.".config/hypr/hyprpaper.conf".text = ''
     preload = /home/liam/nix-config/desktop/background.png
     wallpaper = ,/home/liam/nix-config/desktop/background.png
-  '';
-  xdg.configFile."hypr/autostart.conf".text = ''
-    hyprpaper &
   '';
   xdg.configFile."hypr/hypridle.conf".text = ''
     general {

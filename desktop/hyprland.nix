@@ -105,7 +105,6 @@ in
         gaps_out = 10;
         resize_on_border = true;
         "col.active_border" = "0x88ffffff";
-        "col.inactive_border" = "0x00000000";
         border_size = 1;
       };
 
@@ -156,12 +155,12 @@ in
         # apps
         "$mainMod, RETURN, exec, alacritty"
         "$mainMod, Q, killactive"
-        "$mainMod, F, exec, dolphin"
+        "$mainMod, F, exec, cosmic-files"
         "$mainMod, B, exec, firefox"
         "$mainMod, C, exec, firefox https://t3.chat"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         # screenshot region to clipboard
-        "$mainMod, p, exec, hyprshot -m region --clipboard-only"
+        "$mainMod, p, exec, hyprshot -m region --clipboard-only --freeze"
         "$mainMod, ESCAPE, exec, ${wlogoutWithClear}"
 
         # focus (vim-style)
