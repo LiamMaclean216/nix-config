@@ -20,7 +20,13 @@ in {
   home.file.".claude/anthropic_key.sh" = {
     text = ''
       #!/usr/bin/env bash
-      echo "KEY"
+      if [ -f "${config.home.homeDirectory}/nix-config/.env" ]; then
+          source "${config.home.homeDirectory}/nix-config/.env"
+          echo "$ANTHROPIC_API_KEY"
+      else
+          echo "Error: ANTHROPIC_API_KEY not found in ${config.home.homeDirectory}/nix-config/.env" >&2
+          exit 1
+      fi
     '';
     executable = true;
   };

@@ -9,6 +9,8 @@
       toggleCurrentBlock = "<C-q>";
       toggleOpLeaderBlock = "gb";
       toggleOpLeaderLine = "gc";
+      toggleSelectedLine = "q";
+      toggleSelectedBlock = "";
     };
   };
 }

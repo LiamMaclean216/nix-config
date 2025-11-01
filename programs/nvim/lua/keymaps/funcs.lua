@@ -146,22 +146,17 @@ end
 local claude_terminal = nil
 
 function M.OpenClaudeTerminal(file_reference)
-	M.CloseAllExceptCurrent()
-	-- Fit windows to make room for terminal
-	local code_windows = GetCodeWindows()
-	if #code_windows == 0 then
-		return
-	end
-
 	-- Initialize the claude terminal on first use
 	if not claude_terminal then
 		local Terminal = require("toggleterm.terminal").Terminal
 		claude_terminal = Terminal:new({
 			cmd = "claude",
-			direction = "vertical",
-			size = function()
-				return math.floor(vim.o.columns * 0.33)
-			end,
+			direction = "float",
+			float_opts = {
+				border = "curved",
+				width = math.floor(vim.o.columns * 0.8),
+				height = math.floor(vim.o.lines * 0.8),
+			},
 			hidden = true,
 		})
 	end
