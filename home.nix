@@ -152,6 +152,8 @@ in
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
     ./desktop/hyprland.nix
+    ./desktop/workspaces.nix
+    ./desktop/keybindings.nix
     ./desktop/waybar.nix
   ];
 

@@ -256,6 +256,14 @@
   xdg.mime = {
     enable = true;
     defaultApplications = {
+      # Web browser defaults
+      "text/html" = [ "firefox.desktop" ];
+      "application/xhtml+xml" = [ "firefox.desktop" ];
+      "x-scheme-handler/http" = [ "firefox.desktop" ];
+      "x-scheme-handler/https" = [ "firefox.desktop" ];
+      "x-scheme-handler/about" = [ "firefox.desktop" ];
+      "x-scheme-handler/unknown" = [ "firefox.desktop" ];
+
       "application/msword" = [ "writer.desktop" ];
       "application/vnd.ms-word.document.macroEnabled.12" = [ "writer.desktop" ];
       "application/vnd.ms-word.template.macroEnabled.12" = [ "writer.desktop" ];
