@@ -21,7 +21,7 @@ in
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         # screenshot region to clipboard
         "$mainMod, p, exec, hyprshot -m region --clipboard-only --freeze"
-        "$mainMod, ESCAPE, exec, ${wlogoutWithClear}"
+        "$mainMod, ESCAPE, exec, wlogout -b 2"
 
         # focus (vim-style)
         "$mainMod, h, movefocus, l"

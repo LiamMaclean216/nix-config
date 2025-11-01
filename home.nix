@@ -67,6 +67,11 @@ in
       recursive = true;
   };
 
+  home.file.".config/mako" = {
+      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/mako");
+      recursive = true;
+  };
+
   home.file.".config/nvf/lua/config" = {
       source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
       recursive = true;

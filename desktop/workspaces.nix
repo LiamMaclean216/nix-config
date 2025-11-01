@@ -21,9 +21,6 @@ in
       bind = [
         # Spotify scratchpad toggle
         "$mainMod, S, exec, ${toggleSpotify}"
-
-        # Close special workspace on escape (when focused on special workspace)
-        ", ESCAPE, togglespecialworkspace, spotify"
       ];
 
       # Window rules for Spotify scratchpad
