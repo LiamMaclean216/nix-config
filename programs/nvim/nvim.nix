@@ -6,6 +6,7 @@
     ./comment-nvim.nix
     ./languages.nix
     ./strudel.nix
+    ./theme.nix
   ];
 
   programs.nvf = {
@@ -17,17 +18,8 @@
         vimAlias = true;
         preventJunkFiles = true;
 
-        theme = {
-          enable = false;
-        };
-
         # Enable auto-completion with nvim-cmp
         autocomplete.nvim-cmp.enable = true;
-
-        # Add melange colorscheme plugin
-        startPlugins = with pkgs.vimPlugins; [
-          melange-nvim
-        ];
 
         # Load custom Lua configuration from this repo
         additionalRuntimePaths = [ .nvim/lua ];
@@ -35,11 +27,6 @@
         luaConfigRC.myconfig-dir = ''
             require("config")
           '';
-
-        # Set melange colorscheme
-        luaConfigRC.melange-colorscheme = ''
-          vim.cmd.colorscheme('melange')
-        '';
       };
     };
   };
@@ -49,6 +36,7 @@
     python312Packages.debugpy
     nodePackages.stylelint
     nodePackages.svelte-language-server
+    nodePackages.typescript-language-server
     nodePackages.prettier
     hadolint
   ];

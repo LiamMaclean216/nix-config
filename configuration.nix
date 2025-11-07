@@ -177,6 +177,8 @@
     ripgrep
         cbonsai
     fastfetch
+
+    qdirstat
     mission-center
     zip
     unzip
@@ -189,6 +191,7 @@
     wofi
     hyprshot
     imv
+    kooha
     pulseaudio
     pavucontrol
     wdisplays

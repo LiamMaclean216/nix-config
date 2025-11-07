@@ -16,6 +16,24 @@ in
           command = "{{ .DockerCompose }} up --build -d";
           serviceNames = [];
         }
+        {
+          name = "restart";
+          attach = false;
+          command = "sh -c '{{ .DockerCompose }} down && {{ .DockerCompose }} up -d'";
+          serviceNames = [];
+        }
+        {
+          name = "restart with volumes deleted";
+          attach = false;
+          command = "sh -c '{{ .DockerCompose }} down -v && {{ .DockerCompose }} up -d'";
+          serviceNames = [];
+        }
+        {
+          name = "full rebuild";
+          attach = false;
+          command = "sh -c '{{ .DockerCompose }} down -v && {{ .DockerCompose }} up -d --build'";
+          serviceNames = [];
+        }
       ];
     };
   };

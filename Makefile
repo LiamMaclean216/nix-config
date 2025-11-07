@@ -17,6 +17,7 @@ hypr:
 cleanup:
 	nix-collect-garbage
 	nix-collect-garbage -d
+	nix-env --delete-generations --profile /nix/var/nix/profiles/system 1d
 
 # Do everything: NixOS, Home Manager, then Hyprland reload
 all: nixos home hypr

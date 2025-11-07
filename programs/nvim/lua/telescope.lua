@@ -7,9 +7,13 @@ telescope.setup({
 		mappings = {
 			i = {
 				["<esc>"] = actions.close,
+				["<C-k>"] = actions.cycle_history_prev,
+				["<C-j>"] = actions.cycle_history_next,
 			},
 			n = {
 				["<esc>"] = actions.close,
+				["<C-k>"] = actions.cycle_history_prev,
+				["<C-j>"] = actions.cycle_history_next,
 			},
 		},
 		layout_config = {

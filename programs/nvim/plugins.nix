@@ -24,4 +24,25 @@
       mappings.open = "<C-g>";
     };
   };
+
+  programs.nvf.settings.vim.git.gitsigns = {
+    enable = true;
+    mappings.blameLine = "<leader>hb";
+  };
+
+  # Enable noice for better notifications and filter lspconfig warnings
+  programs.nvf.settings.vim.ui.noice = {
+    enable = true;
+    setupOpts = {
+      routes = [
+        {
+          filter = {
+            event = "notify";
+            find = "lspconfig.*deprecated";
+          };
+          opts = { skip = true; };
+        }
+      ];
+    };
+  };
 }

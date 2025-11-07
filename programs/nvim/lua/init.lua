@@ -4,6 +4,7 @@ require("config.config.neotree")
 require("config.config.bufferline")
 require("config.config.pyright")
 require("config.config.html")
+require("config.config.gitsigns")
 
 vim.opt.number = true
 vim.opt.relativenumber = true
@@ -18,6 +19,12 @@ vim.opt.clipboard = "unnamedplus"
 indent_type = "Spaces"
 indent_width = 2
 column_width = 120
+
+-- Apply indent settings to vim
+vim.opt.expandtab = true      -- Use spaces instead of tabs
+vim.opt.shiftwidth = 4        -- Number of spaces for autoindent
+vim.opt.tabstop = 4           -- Number of spaces a tab counts for
+vim.opt.softtabstop = 4       -- Number of spaces for <Tab> key
 
 
 -- Configure completion keymaps

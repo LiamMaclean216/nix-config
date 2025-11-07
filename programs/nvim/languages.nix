@@ -60,7 +60,7 @@
           server = "ts_ls";
         };
       };
-
+            
       # YAML
       yaml = {
         enable = true;

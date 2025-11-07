@@ -10,7 +10,10 @@
       toggleOpLeaderBlock = "gb";
       toggleOpLeaderLine = "gc";
       toggleSelectedLine = "q";
-      toggleSelectedBlock = "";
+    };
+
+    setupOpts = {
+      ignore = "^$";  # Skip blank lines when commenting
     };
   };
 }
