@@ -10,14 +10,3 @@ padding=20
 border-size=2
 on-button-left=exec sh -c 'makoctl invoke -n "$id" >/dev/null 2>&1 || true; makoctl dismiss -n "$id"'
 
-[app-name=pyright]
-ignore=1
-
-[app-name=nvim]
-ignore=1
-
-[app-name=Alacritty]
-ignore=1
-
-[app-name=Spotify]
-ignore=1
