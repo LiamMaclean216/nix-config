@@ -82,8 +82,8 @@ in
 
   # Hyprpaper: set wallpaper to the repository image
   home.file.".config/hypr/hyprpaper.conf".text = ''
-    preload = /home/liam/nix-config/desktop/background.png
-    wallpaper = ,/home/liam/nix-config/desktop/background.png
+    preload = /home/liam/nix-config/desktop/background.webp
+    wallpaper = ,/home/liam/nix-config/desktop/background.webp
   '';
   xdg.configFile."hypr/hypridle.conf".text = ''
     general {
@@ -123,7 +123,7 @@ in
   # Generate pywal color scheme from background image
   home.activation.generatePywalColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
       rm -rf "$HOME/.cache/wal"
-      ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.png -n -q -s -t
+      ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.webp -n -q -s -t
   '';
 
   # Home Manager can also manage your environment variables through

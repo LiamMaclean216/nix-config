@@ -30,7 +30,7 @@ in
         }
         {
           name = "full rebuild";
-          attach = false;
+          attach = true;
           command = "sh -c '{{ .DockerCompose }} down -v && {{ .DockerCompose }} up -d --build'";
           serviceNames = [];
         }

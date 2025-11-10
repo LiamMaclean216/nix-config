@@ -203,7 +203,12 @@
     kdePackages.ark # Provides Dolphin's right-click extract actions
   adwaita-icon-theme  # Adwaita cursor (includes cursors)
     cosmic-files
+    unimatrix
   ];
+
+  environment.shellAliases = {
+    matrix = "unimatrix -n -s 96 -l o";
+  };
 
   nixpkgs.config.permittedInsecurePackages = [
     "beekeeper-studio-5.1.5"
