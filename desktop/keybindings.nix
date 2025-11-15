@@ -15,7 +15,7 @@ in
         # apps
         "$mainMod, RETURN, exec, alacritty"
         "$mainMod, Q, killactive"
-        "$mainMod, F, exec, cosmic-files"
+        "$mainMod, F, exec, dolphin"
         "$mainMod, B, exec, firefox"
         "$mainMod, C, exec, firefox https://t3.chat"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"

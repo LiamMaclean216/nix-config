@@ -202,8 +202,8 @@
     kdePackages.kio-fuse #to mount remote filesystems via FUSE
     kdePackages.kio-extras #extra protocols support (sftp, fish and more)
     kdePackages.ark # Provides Dolphin's right-click extract actions
+    kdePackages.dolphin
   adwaita-icon-theme  # Adwaita cursor (includes cursors)
-    cosmic-files
     unimatrix
   ];
 
