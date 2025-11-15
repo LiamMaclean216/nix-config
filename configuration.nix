@@ -20,6 +20,7 @@
       General = {
         # Shows battery charge of connected devices on supported
         # Bluetooth adapters. Defaults to 'false'.
+        AutoEnable = true;        # bluez: power on any newly found adapters
         Experimental = true;
         # When enabled other devices can connect faster to us, however
         # the tradeoff is increased power consumption. Defaults to

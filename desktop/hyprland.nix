@@ -24,6 +24,17 @@
     $color15 = 0xff{color15.strip}
   '';
 
+  # Pywal template for Mako notification colors
+  home.file.".config/wal/templates/colors-mako".text = ''
+    background-color={color0}
+    text-color={color7}
+    border-color={color4}
+    progress-color=over {color2}
+
+    [urgency=high]
+    border-color={color1}
+  '';
+
   wayland.windowManager.hyprland = {
     enable = true;
 
@@ -56,7 +67,6 @@
         "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
-        "${pkgs.mako}/bin/mako --config ~/.config/mako/config"
         "waybar"
         "hypridle"
         "hyprlock || hyprctl dispatch exit"

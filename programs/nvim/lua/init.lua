@@ -50,6 +50,16 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHo
   end,
 })
 
+-- Configure Tailwind LSP to always start (even without tailwind.config)
+local lspconfig = require('lspconfig')
+lspconfig.tailwindcss.setup({
+  root_dir = function(fname)
+    -- Always return a root directory to make LSP start regardless of config file
+    return vim.fn.getcwd()
+  end,
+  filetypes = { "html", "css", "javascript", "javascriptreact", "typescript", "typescriptreact", "vue", "svelte" },
+})
+
 -- Setup strudel.nvim
 local strudel = require("strudel")
 strudel.setup({

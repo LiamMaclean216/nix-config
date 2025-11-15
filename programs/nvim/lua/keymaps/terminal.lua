@@ -49,7 +49,25 @@ local bottom_terminal = Terminal:new({
 })
 
 vim.keymap.set(all_modes, "<C-/>", function()
-	bottom_terminal:toggle()
+	-- Check if terminal is open
+	if bottom_terminal:is_open() then
+		-- Check if terminal window is focused
+		local term_win = bottom_terminal.window
+		local current_win = vim.api.nvim_get_current_win()
+
+		if term_win == current_win then
+			-- Already focused, do nothing
+			return
+		else
+			-- Terminal is open but not focused, focus it
+			vim.api.nvim_set_current_win(term_win)
+			vim.cmd("startinsert")
+		end
+	else
+		-- Terminal is closed, open it and focus
+		bottom_terminal:open()
+		vim.cmd("startinsert")
+	end
 end, { desc = "Terminal Float" })
 
 -- System paste in all modes

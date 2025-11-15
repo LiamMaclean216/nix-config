@@ -67,10 +67,6 @@ in
       recursive = true;
   };
 
-  home.file.".config/mako" = {
-      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/mako");
-      recursive = true;
-  };
 
   home.file.".config/nvf/lua/config" = {
       source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
@@ -124,6 +120,10 @@ in
   home.activation.generatePywalColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
       rm -rf "$HOME/.cache/wal"
       ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.webp -n -q -s -t
+      # Reload mako service if it's running to pick up new colors
+      if systemctl --user is-active --quiet mako.service; then
+        systemctl --user reload mako.service || true
+      fi
   '';
 
   # Home Manager can also manage your environment variables through
@@ -160,6 +160,7 @@ in
     ./desktop/workspaces.nix
     ./desktop/keybindings.nix
     ./desktop/waybar.nix
+    ./desktop/mako.nix
   ];
 
 }
