@@ -62,6 +62,16 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHo
   end,
 })
 
+-- Format on save
+vim.api.nvim_create_autocmd("BufWritePre", {
+  callback = function()
+    vim.lsp.buf.format({ async = false })
+  end,
+})
+
+-- Configure completion for SQL
+local cmp = require('cmp')
+
 -- -- Setup strudel.nvim
 -- local strudel = require("strudel")
 -- strudel.setup({
