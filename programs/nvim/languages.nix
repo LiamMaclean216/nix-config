@@ -68,7 +68,10 @@
         lsp = {
           enable = true;
         };
-        format.enable = true;
+        format = {
+          enable = true;
+          package = pkgs.nodePackages.prettier;
+        };
       };
 
       # SQL
