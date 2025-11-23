@@ -183,6 +183,7 @@
     libnotify
     supabase-cli
     act
+    postgresql # Provides psql for vim-dadbod
 
     ripgrep
         cbonsai

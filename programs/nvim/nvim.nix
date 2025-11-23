@@ -38,6 +38,7 @@
     nodePackages.svelte-language-server
     nodePackages.typescript-language-server
     nodePackages.prettier
+    tailwindcss-language-server
     hadolint
   ];
 }
