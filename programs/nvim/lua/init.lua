@@ -5,6 +5,7 @@ require("config.config.bufferline")
 require("config.config.pyright")
 require("config.config.html")
 require("config.config.gitsigns")
+require("config.theme")
 
 vim.opt.number = true
 vim.opt.relativenumber = true
@@ -15,6 +16,20 @@ vim.opt.completeopt = {'menu', 'menuone', 'noselect'}
 vim.g.mapleader = " "
 
 vim.opt.clipboard = "unnamedplus"
+
+-- Configure diagnostics to show inline errors in red
+vim.diagnostic.config({
+  virtual_text = {
+    prefix = '',
+    format = function(diagnostic)
+      return diagnostic.message
+    end,
+  },
+  signs = true,
+  underline = true,
+  update_in_insert = false,
+  severity_sort = true,
+})
 
 indent_type = "Spaces"
 indent_width = 2
@@ -60,16 +75,16 @@ lspconfig.tailwindcss.setup({
   filetypes = { "html", "css", "javascript", "javascriptreact", "typescript", "typescriptreact", "vue", "svelte" },
 })
 
--- Setup strudel.nvim
-local strudel = require("strudel")
-strudel.setup({
-  update_on_save = true
-})
+-- -- Setup strudel.nvim
+-- local strudel = require("strudel")
+-- strudel.setup({
+--   update_on_save = true
+-- })
 
-vim.keymap.set("n", "<leader>sl", strudel.launch, { desc = "Launch Strudel" })
-vim.keymap.set("n", "<leader>sq", strudel.quit, { desc = "Quit Strudel" })
-vim.keymap.set("n", "<leader>st", strudel.toggle, { desc = "Strudel Toggle Play/Stop" })
-vim.keymap.set("n", "<leader>su", strudel.update, { desc = "Strudel Update" })
-vim.keymap.set("n", "<leader>ss", strudel.stop, { desc = "Strudel Stop Playback" })
-vim.keymap.set("n", "<leader>sb", strudel.set_buffer, { desc = "Strudel set current buffer" })
-vim.keymap.set("n", "<leader>sx", strudel.execute, { desc = "Strudel set current buffer and update" })
+-- vim.keymap.set("n", "<leader>sl", strudel.launch, { desc = "Launch Strudel" })
+-- vim.keymap.set("n", "<leader>sq", strudel.quit, { desc = "Quit Strudel" })
+-- vim.keymap.set("n", "<leader>st", strudel.toggle, { desc = "Strudel Toggle Play/Stop" })
+-- vim.keymap.set("n", "<leader>su", strudel.update, { desc = "Strudel Update" })
+-- vim.keymap.set("n", "<leader>ss", strudel.stop, { desc = "Strudel Stop Playback" })
+-- vim.keymap.set("n", "<leader>sb", strudel.set_buffer, { desc = "Strudel set current buffer" })
+-- vim.keymap.set("n", "<leader>sx", strudel.execute, { desc = "Strudel set current buffer and update" })

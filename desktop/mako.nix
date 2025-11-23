@@ -32,16 +32,14 @@
 
       # Click behavior
       on-button-left = "exec sh -c 'makoctl invoke -n \"$id\" >/dev/null 2>&1 || true; makoctl dismiss -n \"$id\"'";
-    };
 
-    # Extra configuration for pywal colors and urgency
-    # extraConfig = ''
-    #   # Source pywal colors (will override fallback colors above)
-    #   source=~/.cache/wal/colors-mako
-    #
-    #   # High urgency notifications
-    #   [urgency=high]
-    #   border-color=#f38ba8
-    # '';
+      # Hide all notifications by default
+      invisible = 1;
+
+      # Criteria sections for app filtering
+      "app-name=vesktop" = {
+        invisible = 0;
+      };
+    };
   };
 }

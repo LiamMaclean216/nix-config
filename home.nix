@@ -41,6 +41,9 @@ in
 
 # ensure $HOME/node_modules/bin is on PATH at shell runtime
     home.file.".profile".text = ''
+    # Set permissive umask for all new files
+    umask 0002
+
     if [ -d "$HOME/node_modules/bin" ] && ! echo "$PATH" | grep -q "$HOME/node_modules/bin"; then
       export PATH="$HOME/node_modules/bin:$PATH"
     fi

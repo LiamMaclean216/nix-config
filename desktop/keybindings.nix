@@ -19,8 +19,8 @@ in
         "$mainMod, B, exec, firefox"
         "$mainMod, C, exec, firefox https://t3.chat"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
-        # screenshot region to clipboard
-        "$mainMod, p, exec, hyprshot -m region --clipboard-only --freeze"
+        # screenshot with flameshot
+        "$mainMod, p, exec, flameshot gui"
         "$mainMod, ESCAPE, exec, wlogout -b 2"
 
         # focus (vim-style)

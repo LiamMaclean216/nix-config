@@ -5,7 +5,7 @@
     ./plugins.nix
     ./comment-nvim.nix
     ./languages.nix
-    ./strudel.nix
+    # ./strudel.nix
     ./theme.nix
   ];
 

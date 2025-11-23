@@ -1,4 +1,8 @@
-.PHONY: nixos home hypr all
+.PHONY: nixos home hypr all update
+
+# Update flake inputs to get latest packages
+update:
+	nix flake update
 
 # Rebuild and switch NixOS from this flake
 nixos:

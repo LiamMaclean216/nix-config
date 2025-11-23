@@ -62,7 +62,8 @@
 
   services.desktopManager.plasma6.enable = false;
 
-  services.gnome.gnome-keyring.enable = true;
+  # Disable gnome-keyring to avoid password prompts in lazygit
+  services.gnome.gnome-keyring.enable = false;
 
   # Configure network proxy if necessary
   # networking.proxy.default = "http://user:password@proxy:port/";
@@ -98,7 +99,7 @@
 
   virtualisation.docker = {
     enable = true;
-    rootless.enable = true;
+    rootless.enable = false;
   };
 
   # Configure keymap in X11
@@ -125,7 +126,7 @@
   # Enable touchpad support (enabled default in most desktopManager).
   # services.xserver.libinput.enable = true;
 
-  # Define a user account. Don't forget to set a password with ‘passwd’.
+  # Define a user account. Don't forget to set a password with 'passwd'.
   users.users.liam = {
     isNormalUser = true;
     description = "Liam";
@@ -142,7 +143,14 @@
   security.sudo.wheelNeedsPassword = false;
 
   # Install firefox.
-  programs.firefox.enable = true;
+  programs.firefox = {
+    enable = true;
+    preferences = {
+      "ui.systemUsesDarkTheme" = 1;
+      "browser.theme.content-theme" = 0;
+      "browser.theme.toolbar-theme" = 0;
+    };
+  };
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
@@ -152,7 +160,7 @@
   environment.systemPackages = with pkgs; [
     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     wget
-    discord
+    vesktop
     lazydocker
     lazygit
     git
@@ -170,7 +178,7 @@
     blueman
     usbutils
     nodejs
-    redisinsight
+    # redisinsight
     mako
     libnotify
     act
@@ -178,6 +186,9 @@
     ripgrep
         cbonsai
     fastfetch
+    (flameshot.override { enableWlrSupport = true; })
+    grim
+    slurp
 
     qdirstat
     mission-center
@@ -294,12 +305,12 @@
 
   xdg.portal.enable = true;
   xdg.portal.extraPortals = with pkgs; [
-    xdg-desktop-portal-hyprland
+    kdePackages.xdg-desktop-portal-kde
     xdg-desktop-portal-gtk
   ];
   xdg.portal.config = {
     common = {
-      default = [ "hyprland" "gtk" ];
+      default = [ "kde" "gtk" ];
       "org.freedesktop.portal.Notification" = [ "gtk" ];
     };
   };
