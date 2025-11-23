@@ -21,8 +21,11 @@
         # Enable auto-completion with nvim-cmp
         autocomplete.nvim-cmp.enable = true;
 
-        # Load custom Lua configuration from this repo
-        additionalRuntimePaths = [ .nvim/lua ];
+        # Load custom Lua configuration and runtime files (queries, etc.)
+        additionalRuntimePaths = [
+          ./lua
+          ./.
+        ];
 
         luaConfigRC.myconfig-dir = ''
             require("config")

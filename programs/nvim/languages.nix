@@ -107,6 +107,9 @@
       grammars = [
         pkgs.vimPlugins.nvim-treesitter-parsers.javascript
         pkgs.vimPlugins.nvim-treesitter-parsers.typescript
+        pkgs.vimPlugins.nvim-treesitter-parsers.svelte
+        pkgs.vimPlugins.nvim-treesitter-parsers.html
+        pkgs.vimPlugins.nvim-treesitter-parsers.css
       ];
     };
   };
