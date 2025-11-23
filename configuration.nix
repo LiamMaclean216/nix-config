@@ -181,6 +181,7 @@
     # redisinsight
     mako
     libnotify
+    supabase-cli
     act
 
     ripgrep

@@ -42,16 +42,13 @@ vim.opt.tabstop = 4           -- Number of spaces a tab counts for
 vim.opt.softtabstop = 4       -- Number of spaces for <Tab> key
 
 
--- Configure completion keymaps
+-- Configure completion for SQL
 local cmp = require('cmp')
-cmp.setup({
-  mapping = cmp.mapping.preset.insert({
-    ['<Down>'] = cmp.mapping.select_next_item(),
-    ['<Up>'] = cmp.mapping.select_prev_item(),
-    ['<CR>'] = cmp.mapping.confirm({ select = true }),
-    ['<C-Space>'] = cmp.mapping.complete(),
-    ['<C-e>'] = cmp.mapping.abort(),
-  }),
+cmp.setup.filetype({ "sql", "mysql", "plsql" }, {
+  sources = {
+    { name = "vim-dadbod-completion" },
+    { name = "buffer" },
+  }
 })
 
 -- Autoreload changes so AI changes show
@@ -63,16 +60,6 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHo
       vim.cmd("checktime")
     end
   end,
-})
-
--- Configure Tailwind LSP to always start (even without tailwind.config)
-local lspconfig = require('lspconfig')
-lspconfig.tailwindcss.setup({
-  root_dir = function(fname)
-    -- Always return a root directory to make LSP start regardless of config file
-    return vim.fn.getcwd()
-  end,
-  filetypes = { "html", "css", "javascript", "javascriptreact", "typescript", "typescriptreact", "vue", "svelte" },
 })
 
 -- -- Setup strudel.nvim

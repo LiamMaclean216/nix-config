@@ -24,11 +24,11 @@
       default-timeout = 0;
       ignore-timeout = 1;
 
-      # Fallback colors (Catppuccin Mocha theme)
-      background-color = "#1e1e2e";
-      text-color = "#cdd6f4";
-      border-color = "#89b4fa";
-      progress-color = "over #89b4fa";
+      # Melange theme colors
+      background-color = "#292522";  # Melange dark brown background
+      text-color = "#ECE1D7";        # Melange light cream foreground
+      border-color = "#85B5BA";      # Melange muted cyan
+      progress-color = "over #85B5BA";
 
       # Click behavior
       on-button-left = "exec sh -c 'makoctl invoke -n \"$id\" >/dev/null 2>&1 || true; makoctl dismiss -n \"$id\"'";

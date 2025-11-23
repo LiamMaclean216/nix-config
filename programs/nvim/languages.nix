@@ -60,6 +60,23 @@
           server = "ts_ls";
         };
       };
+
+      # Svelte
+      svelte = {
+        enable = true;
+        treesitter.enable = true;
+        lsp = {
+          enable = true;
+        };
+        format.enable = true;
+      };
+
+      # SQL
+      sql = {
+        enable = true;
+        treesitter.enable = true;
+        lsp.enable = true;
+      };
             
       # YAML
       yaml = {

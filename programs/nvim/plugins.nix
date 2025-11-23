@@ -45,4 +45,10 @@
       ];
     };
   };
+
+  programs.nvf.settings.vim.extraPlugins = with pkgs.vimPlugins; {
+    vim-dadbod = { package = vim-dadbod; };
+    vim-dadbod-ui = { package = vim-dadbod-ui; };
+    vim-dadbod-completion = { package = vim-dadbod-completion; };
+  };
 }

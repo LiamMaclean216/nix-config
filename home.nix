@@ -157,6 +157,7 @@ in
     ./programs/vscode.nix
     ./programs/codex.nix
     ./programs/claude-code.nix
+    ./programs/gemini-cli.nix
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
     ./desktop/hyprland.nix
