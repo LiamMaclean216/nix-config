@@ -5,6 +5,7 @@ require('lspconfig').ts_ls.setup({
     "javascriptreact",
     "typescript",
     "typescriptreact",
-    "html"  -- Add HTML to ts_ls filetypes
+    "html",  -- Add HTML to ts_ls filetypes
+    "svelte"
   }
 })
