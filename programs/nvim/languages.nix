@@ -102,8 +102,12 @@
     # Enable treesitter globally
     treesitter = {
       enable = true;
+      highlight.enable = true;
       fold = true;
-      grammars = [ pkgs.vimPlugins.nvim-treesitter-parsers.javascript ];
+      grammars = [
+        pkgs.vimPlugins.nvim-treesitter-parsers.javascript
+        pkgs.vimPlugins.nvim-treesitter-parsers.typescript
+      ];
     };
   };
 }
