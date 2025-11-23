@@ -61,12 +61,6 @@
         };
       };
 
-      # JavaScript (Explicitly enable to ensure JS grammar is present for Svelte)
-      javaScript = {
-        enable = true;
-        treesitter.enable = true;
-      };
-
       # Svelte
       svelte = {
         enable = true;

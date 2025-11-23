@@ -50,5 +50,8 @@
     vim-dadbod = { package = vim-dadbod; };
     vim-dadbod-ui = { package = vim-dadbod-ui; };
     vim-dadbod-completion = { package = vim-dadbod-completion; };
+    
+    # Force install JavaScript grammar for Svelte script highlighting
+    tree-sitter-javascript = { package = nvim-treesitter-parsers.javascript; };
   };
 }
