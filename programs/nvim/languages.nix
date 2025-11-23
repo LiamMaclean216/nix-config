@@ -103,6 +103,7 @@
     treesitter = {
       enable = true;
       fold = true;
+      grammars = [ pkgs.vimPlugins.nvim-treesitter-parsers.javascript ];
     };
   };
 }
