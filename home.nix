@@ -1,10 +1,13 @@
-{ config, pkgs, lib, inputs, ... }:
-
-let
-  myPython = import ./python.nix { inherit pkgs; };
-  dir = "${config.home.homeDirectory}/nix-config";
-in
 {
+  config,
+  pkgs,
+  lib,
+  inputs,
+  ...
+}: let
+  myPython = import ./python.nix {inherit pkgs;};
+  dir = "${config.home.homeDirectory}/nix-config";
+in {
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
   home.username = "liam";
@@ -33,14 +36,13 @@ in
   programs.hyprlock.enable = true;
   nixpkgs.config.allowUnfree = true;
 
-
   home.sessionVariables = {
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
     TERMINAL = "alacritty";
   };
 
-# ensure $HOME/node_modules/bin is on PATH at shell runtime
-    home.file.".profile".text = ''
+  # ensure $HOME/node_modules/bin is on PATH at shell runtime
+  home.file.".profile".text = ''
     # Set permissive umask for all new files
     umask 0002
 
@@ -54,26 +56,24 @@ in
     export PATH="$HOME/node_modules/bin:$PATH"
   '';
 
-
   # Ensure ~/venv exists with pynvim
   home.file.".venv/.keep".text = ''
-      # placeholder to create venv folder
+    # placeholder to create venv folder
   '';
 
   home.file.".config/wofi" = {
-      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wofi");
-      recursive = true;
+    source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wofi");
+    recursive = true;
   };
 
   home.file.".config/wlogout" = {
-      source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wlogout");
-      recursive = true;
+    source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wlogout");
+    recursive = true;
   };
 
-
   home.file.".config/nvf/lua/config" = {
-      source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
-      recursive = true;
+    source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
+    recursive = true;
   };
 
   # Hyprland configuration moved to module file
@@ -111,22 +111,22 @@ in
   home.file.".config/hypr/hyprlock.conf".source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/hyprlock.conf");
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      VENV="$HOME/.venv"
-      PYTHON="${pkgs.python311}/bin/python3"
-      if [ ! -d "$VENV" ]; then
-        "$PYTHON" -m venv "$VENV"
-        "$VENV/bin/pip" install --upgrade pip pynvim
-      fi
+    VENV="$HOME/.venv"
+    PYTHON="${pkgs.python311}/bin/python3"
+    if [ ! -d "$VENV" ]; then
+      "$PYTHON" -m venv "$VENV"
+      "$VENV/bin/pip" install --upgrade pip pynvim
+    fi
   '';
 
   # Generate pywal color scheme from background image
   home.activation.generatePywalColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      rm -rf "$HOME/.cache/wal"
-      ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.webp -n -q -s -t
-      # Reload mako service if it's running to pick up new colors
-      if systemctl --user is-active --quiet mako.service; then
-        systemctl --user reload mako.service || true
-      fi
+    rm -rf "$HOME/.cache/wal"
+    ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.webp -n -q -s -t
+    # Reload mako service if it's running to pick up new colors
+    if systemctl --user is-active --quiet mako.service; then
+      systemctl --user reload mako.service || true
+    fi
   '';
 
   # Home Manager can also manage your environment variables through
@@ -166,5 +166,4 @@ in
     ./desktop/waybar.nix
     ./desktop/mako.nix
   ];
-
 }

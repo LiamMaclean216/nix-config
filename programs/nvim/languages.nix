@@ -1,6 +1,9 @@
-{ config, pkgs, lib, ... }:
-
 {
+  config,
+  pkgs,
+  lib,
+  ...
+}: {
   programs.nvf.settings.vim = {
     languages = {
       # Python (includes Django support via LSP)
@@ -9,11 +12,11 @@
         treesitter.enable = true;
         lsp = {
           enable = true;
-          server = "pyright";  # Provides inline diagnostics, type checking, and auto-imports
+          server = "pyright"; # Provides inline diagnostics, type checking, and auto-imports
         };
         format = {
           enable = true;
-          type = "ruff";  # Fast linter and formatter
+          type = "ruff"; # Fast linter and formatter
         };
       };
 
@@ -54,10 +57,14 @@
       # TypeScript/JavaScript
       ts = {
         enable = true;
-        treesitter.enable = true;
-        lsp = {
+        # treesitter.enable = true;
+        # lsp = {
+        #   enable = true;
+        #   server = "ts_ls";
+        # };
+        format = {
           enable = true;
-          server = "ts_ls";
+          package = pkgs.nodePackages.prettier;
         };
       };
 
@@ -80,7 +87,7 @@
         treesitter.enable = true;
         lsp.enable = true;
       };
-            
+
       # YAML
       yaml = {
         enable = true;
@@ -104,13 +111,7 @@
       enable = true;
       highlight.enable = true;
       fold = true;
-      grammars = [
-        pkgs.vimPlugins.nvim-treesitter-parsers.javascript
-        pkgs.vimPlugins.nvim-treesitter-parsers.typescript
-        pkgs.vimPlugins.nvim-treesitter-parsers.svelte
-        pkgs.vimPlugins.nvim-treesitter-parsers.html
-        pkgs.vimPlugins.nvim-treesitter-parsers.css
-      ];
+      grammars = [pkgs.vimPlugins.nvim-treesitter.builtGrammars.typescript];
     };
   };
 }

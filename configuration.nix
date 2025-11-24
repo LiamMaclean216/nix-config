@@ -1,16 +1,18 @@
 # Edit this configuration file to define what should be installed on
 # your system.  Help is available in the configuration.nix(5) man page
 # and in the NixOS manual (accessible by running ‘nixos-help’).
-
-{ inputs, config, pkgs, ... }:
-
 {
-  imports =
-    [ # Include the results of the hardware scan.
-      ./hardware-configuration.nix
-      ./nvidia.nix
-      ./fonts.nix
-    ];
+  inputs,
+  config,
+  pkgs,
+  ...
+}: {
+  imports = [
+    # Include the results of the hardware scan.
+    ./hardware-configuration.nix
+    ./nvidia.nix
+    ./fonts.nix
+  ];
 
   # env vars configured later alongside Wayland tweaks
   hardware.bluetooth = {
@@ -20,14 +22,14 @@
       General = {
         # Shows battery charge of connected devices on supported
         # Bluetooth adapters. Defaults to 'false'.
-        AutoEnable = true;        # bluez: power on any newly found adapters
+        AutoEnable = true; # bluez: power on any newly found adapters
         Experimental = true;
         # When enabled other devices can connect faster to us, however
         # the tradeoff is increased power consumption. Defaults to
         # 'false'.
         FastConnectable = true;
-          ControllerMode = "dual";
-          Enable = "Source,Sink,Media,Socket";
+        ControllerMode = "dual";
+        Enable = "Source,Sink,Media,Socket";
       };
       Policy = {
         # Enable all controllers when they are found. This includes
@@ -38,8 +40,8 @@
     };
   };
   services.blueman.enable = true;
-  boot.kernelModules = [ "iwlwifi" "btusb" "rtw88_8822be"];
-  boot.kernelPackages = pkgs.linuxPackages_latest; 
+  boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"];
+  boot.kernelPackages = pkgs.linuxPackages_latest;
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -114,13 +116,12 @@
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
   security.rtkit.enable = true;
- services.pipewire = {
+  services.pipewire = {
     enable = true;
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
-
   };
 
   # Enable touchpad support (enabled default in most desktopManager).
@@ -130,7 +131,7 @@
   users.users.liam = {
     isNormalUser = true;
     description = "Liam";
-    extraGroups = [ "networkmanager" "wheel" "docker"];
+    extraGroups = ["networkmanager" "wheel" "docker"];
     packages = with pkgs; [
       kdePackages.kate
       #  thunderbird
@@ -186,9 +187,9 @@
     postgresql # Provides psql for vim-dadbod
 
     ripgrep
-        cbonsai
+    cbonsai
     fastfetch
-    (flameshot.override { enableWlrSupport = true; })
+    (flameshot.override {enableWlrSupport = true;})
     grim
     slurp
 
@@ -211,12 +212,12 @@
     wdisplays
     wlogout
 
-    kdePackages.qtsvg 
+    kdePackages.qtsvg
     kdePackages.kio-fuse #to mount remote filesystems via FUSE
     kdePackages.kio-extras #extra protocols support (sftp, fish and more)
     kdePackages.ark # Provides Dolphin's right-click extract actions
     kdePackages.dolphin
-  adwaita-icon-theme  # Adwaita cursor (includes cursors)
+    adwaita-icon-theme # Adwaita cursor (includes cursors)
     unimatrix
   ];
 
@@ -255,15 +256,14 @@
   # Before changing this value read the documentation for this option
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "25.05"; # Did you read the comment?
-  nix.settings.experimental-features = ["nix-command" "flakes" ];
+  nix.settings.experimental-features = ["nix-command" "flakes"];
 
-  environment.pathsToLink = [ "/libexec" ]; # links /libexec from derivations to /run/current-system/sw 
+  environment.pathsToLink = ["/libexec"]; # links /libexec from derivations to /run/current-system/sw
 
   services.xserver = {
     enable = true;
-    desktopManager = { xterm.enable = true; };
+    desktopManager = {xterm.enable = true;};
   };
-
 
   # Switch to Hyprland (Wayland)
   programs.hyprland.enable = true;
@@ -276,32 +276,32 @@
     enable = true;
     defaultApplications = {
       # Web browser defaults
-      "text/html" = [ "firefox.desktop" ];
-      "application/xhtml+xml" = [ "firefox.desktop" ];
-      "x-scheme-handler/http" = [ "firefox.desktop" ];
-      "x-scheme-handler/https" = [ "firefox.desktop" ];
-      "x-scheme-handler/about" = [ "firefox.desktop" ];
-      "x-scheme-handler/unknown" = [ "firefox.desktop" ];
+      "text/html" = ["firefox.desktop"];
+      "application/xhtml+xml" = ["firefox.desktop"];
+      "x-scheme-handler/http" = ["firefox.desktop"];
+      "x-scheme-handler/https" = ["firefox.desktop"];
+      "x-scheme-handler/about" = ["firefox.desktop"];
+      "x-scheme-handler/unknown" = ["firefox.desktop"];
 
-      "application/msword" = [ "writer.desktop" ];
-      "application/vnd.ms-word.document.macroEnabled.12" = [ "writer.desktop" ];
-      "application/vnd.ms-word.template.macroEnabled.12" = [ "writer.desktop" ];
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "writer.desktop" ];
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.template" = [ "writer.desktop" ];
+      "application/msword" = ["writer.desktop"];
+      "application/vnd.ms-word.document.macroEnabled.12" = ["writer.desktop"];
+      "application/vnd.ms-word.template.macroEnabled.12" = ["writer.desktop"];
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = ["writer.desktop"];
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template" = ["writer.desktop"];
 
-      "application/vnd.ms-excel" = [ "calc.desktop" ];
-      "application/vnd.ms-excel.sheet.macroEnabled.12" = [ "calc.desktop" ];
-      "application/vnd.ms-excel.template.macroEnabled.12" = [ "calc.desktop" ];
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = [ "calc.desktop" ];
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.template" = [ "calc.desktop" ];
+      "application/vnd.ms-excel" = ["calc.desktop"];
+      "application/vnd.ms-excel.sheet.macroEnabled.12" = ["calc.desktop"];
+      "application/vnd.ms-excel.template.macroEnabled.12" = ["calc.desktop"];
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = ["calc.desktop"];
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template" = ["calc.desktop"];
 
-      "application/vnd.ms-powerpoint" = [ "impress.desktop" ];
-      "application/vnd.ms-powerpoint.presentation.macroEnabled.12" = [ "impress.desktop" ];
-      "application/vnd.ms-powerpoint.template.macroEnabled.12" = [ "impress.desktop" ];
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation" = [ "impress.desktop" ];
-      "application/vnd.openxmlformats-officedocument.presentationml.template" = [ "impress.desktop" ];
+      "application/vnd.ms-powerpoint" = ["impress.desktop"];
+      "application/vnd.ms-powerpoint.presentation.macroEnabled.12" = ["impress.desktop"];
+      "application/vnd.ms-powerpoint.template.macroEnabled.12" = ["impress.desktop"];
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation" = ["impress.desktop"];
+      "application/vnd.openxmlformats-officedocument.presentationml.template" = ["impress.desktop"];
 
-      "application/pdf" = [ "firefox.desktop" ];
+      "application/pdf" = ["firefox.desktop"];
     };
   };
 
@@ -312,8 +312,8 @@
   ];
   xdg.portal.config = {
     common = {
-      default = [ "kde" "gtk" ];
-      "org.freedesktop.portal.Notification" = [ "gtk" ];
+      default = ["kde" "gtk"];
+      "org.freedesktop.portal.Notification" = ["gtk"];
     };
   };
 
@@ -323,7 +323,7 @@
     #WLR_NO_HARDWARE_CURSORS = lib.mkDefault "1";
   };
 
-programs.coolercontrol.enable = true;
-programs.coolercontrol.nvidiaSupport = true;
-powerManagement.cpuFreqGovernor = "performance";
+  programs.coolercontrol.enable = true;
+  programs.coolercontrol.nvidiaSupport = true;
+  powerManagement.cpuFreqGovernor = "performance";
 }
