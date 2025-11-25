@@ -122,6 +122,7 @@
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
+    wireplumber.enable = true;
   };
 
   # Enable touchpad support (enabled default in most desktopManager).
@@ -175,6 +176,7 @@
     xclip
     github-desktop
     bluez
+    kooha
     bluez-tools
     blueman
     usbutils
@@ -185,6 +187,17 @@
     supabase-cli
     act
     postgresql # Provides psql for vim-dadbod
+
+    # GStreamer plugins for Kooha screen recording
+    gst_all_1.gstreamer
+    gst_all_1.gst-plugins-base
+    gst_all_1.gst-plugins-good
+    gst_all_1.gst-plugins-bad
+    gst_all_1.gst-plugins-ugly
+    gst_all_1.gst-vaapi
+    gst_all_1.gst-libav
+
+    pipewire # Ensure gstreamer plugin is available
 
     ripgrep
     cbonsai
@@ -206,7 +219,6 @@
     wofi
     hyprshot
     imv
-    kooha
     pulseaudio
     pavucontrol
     wdisplays
@@ -307,12 +319,14 @@
 
   xdg.portal.enable = true;
   xdg.portal.extraPortals = with pkgs; [
+    xdg-desktop-portal-hyprland
     kdePackages.xdg-desktop-portal-kde
     xdg-desktop-portal-gtk
   ];
   xdg.portal.config = {
     common = {
-      default = ["kde" "gtk"];
+      default = ["hyprland" "kde" "gtk"];
+      "org.freedesktop.portal.ScreenCast" = ["hyprland"];
       "org.freedesktop.portal.Notification" = ["gtk"];
     };
   };
