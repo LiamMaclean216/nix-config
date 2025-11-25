@@ -1,13 +1,15 @@
-{ config, pkgs, lib, ... }:
-
-let
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}: let
   # Dismiss existing notifications before launching the logout menu.
   wlogoutWithClear = pkgs.writeShellScript "wlogout-clear-notifications" ''
     ${pkgs.mako}/bin/makoctl dismiss --all || true
     exec ${pkgs.wlogout}/bin/wlogout "$@"
   '';
-in
-{
+in {
   wayland.windowManager.hyprland = {
     settings = {
       # keybinds
@@ -19,6 +21,9 @@ in
         "$mainMod, B, exec, firefox"
         "$mainMod, C, exec, firefox https://t3.chat"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
+        "$mainMod, N, exec, alacritty -e nvim +'lua vim.schedule(function() vim.cmd([[Telescope projects]]) end)'"
+        # record screen selection with wf-recorder
+        "$mainMod, R, exec, wf-recorder -g "$(slurp)" -f "$HOME/videos/$(date +%Y-%m-%d_%H-%M-%S).webm"
         # screenshot with flameshot
         "$mainMod, p, exec, flameshot gui"
         "$mainMod, ESCAPE, exec, wlogout -b 2"
