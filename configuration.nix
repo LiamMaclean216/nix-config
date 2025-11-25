@@ -154,6 +154,8 @@
     };
   };
 
+  programs.gpu-screen-recorder.enable = true;
+
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
@@ -176,7 +178,8 @@
     xclip
     github-desktop
     bluez
-    kooha
+    gpu-screen-recorder-gtk
+    wf-recorder
     bluez-tools
     blueman
     usbutils
