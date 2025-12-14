@@ -72,6 +72,12 @@ function OpenVSplitRight(select)
 end
 
 function M.CloseAllNonCode()
+	-- Auto-select code window first if not in one
+	local current_win = vim.api.nvim_get_current_win()
+	if not IsCodeWindow(current_win) then
+		SelectFirstWindow()
+	end
+
 	local windows = vim.api.nvim_list_wins()
 	for _, win in ipairs(windows) do
 		if not IsCodeWindow(win) then
@@ -91,9 +97,14 @@ function IsCodeWindow(win)
 end
 
 function M.CloseAllExceptCurrent()
+	-- Auto-select code window first if not in one
 	local current_win = vim.api.nvim_get_current_win()
-	local windows = vim.api.nvim_list_wins()
+	if not IsCodeWindow(current_win) then
+		SelectFirstWindow()
+		current_win = vim.api.nvim_get_current_win()
+	end
 
+	local windows = vim.api.nvim_list_wins()
 	pcall(function()
 		for _, win in ipairs(windows) do
 			if win ~= current_win then
@@ -158,6 +169,11 @@ function M.OpenClaudeTerminal(file_reference)
 				height = math.floor(vim.o.lines * 0.8),
 			},
 			hidden = true,
+			on_open = function(term)
+				vim.keymap.set("t", "<C-q>", function()
+					term:close()
+				end, { buffer = term.bufnr, noremap = true, silent = true })
+			end,
 		})
 	end
 
@@ -170,6 +186,23 @@ function M.OpenClaudeTerminal(file_reference)
 			vim.fn.feedkeys("@" .. file_reference .. " ")
 		end, 100)
 	end
+end
+
+-- Buffer navigation with auto-select code window
+function M.NextBuffer()
+	local current_win = vim.api.nvim_get_current_win()
+	if not IsCodeWindow(current_win) then
+		SelectFirstWindow()
+	end
+	vim.cmd("bnext")
+end
+
+function M.PrevBuffer()
+	local current_win = vim.api.nvim_get_current_win()
+	if not IsCodeWindow(current_win) then
+		SelectFirstWindow()
+	end
+	vim.cmd("bprevious")
 end
 
 return M

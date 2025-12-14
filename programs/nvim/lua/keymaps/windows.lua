@@ -22,5 +22,5 @@ vim.keymap.set(all_modes, "<C-1>", "<Esc><Cmd>lua SelectFirstWindow()<CR>", opts
 vim.keymap.set(all_modes, "<C-2>", "<Esc><Cmd>lua OpenVSplitRight()<CR>", opts)
 
 -- Buffer navigation
-vim.api.nvim_set_keymap("n", "<C-l>", ":bnext<CR>", opts)
-vim.api.nvim_set_keymap("n", "<C-h>", ":bprevious<CR>", opts)
+vim.keymap.set(all_modes, "<C-l>", "<Esc><Cmd>lua Funcs.NextBuffer()<CR>", opts)
+vim.keymap.set(all_modes, "<C-h>", "<Esc><Cmd>lua Funcs.PrevBuffer()<CR>", opts)

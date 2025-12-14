@@ -54,14 +54,14 @@
         lsp.enable = true;
       };
 
-      # TypeScript/JavaScript
+      # TypeScript/JavaScript (includes React/Next.js support)
       ts = {
         enable = true;
-        # treesitter.enable = true;
-        # lsp = {
-        #   enable = true;
-        #   server = "ts_ls";
-        # };
+        treesitter.enable = true;
+        lsp = {
+          enable = true;
+          server = "ts_ls"; # Supports JSX/TSX and React
+        };
         format = {
           enable = true;
           package = pkgs.nodePackages.prettier;
@@ -111,7 +111,12 @@
       enable = true;
       highlight.enable = true;
       fold = true;
-      grammars = [pkgs.vimPlugins.nvim-treesitter.builtGrammars.typescript];
+      grammars = [
+        pkgs.vimPlugins.nvim-treesitter.builtGrammars.typescript
+        pkgs.vimPlugins.nvim-treesitter.builtGrammars.tsx
+        pkgs.vimPlugins.nvim-treesitter.builtGrammars.javascript
+        # pkgs.vimPlugins.nvim-treesitter.builtGrammars.jsx
+      ];
     };
   };
 }

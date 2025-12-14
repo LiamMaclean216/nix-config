@@ -1,16 +1,19 @@
-{ config, pkgs, lib, ... }:
-
-let
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}: let
   # Build strudel.nvim as a Vim plugin with npm dependencies
   strudel-nvim = pkgs.buildNpmPackage {
     pname = "strudel-nvim";
-    version = "1";
+    version = "unstable-2024-12-12";
 
     src = pkgs.fetchFromGitHub {
       owner = "gruvw";
       repo = "strudel.nvim";
-      rev = "main";
-      hash = "sha256-2n6SL/AUqHEAMNFsxE3UmfSyXUBsE4fnWfg2qsBfjNQ=";
+      rev = "a6b9752b0084a20c37786b54eef2095bb31daff7";
+      hash = "sha256-LhS41aKsYJpKqoF2S3ZzeDLYGBKA4iMN2o34k8YOWHs=";
     };
 
     npmDepsHash = "sha256-K016bVIMjO3972O67N3os/o3wryMyo5D244RhBNCvkY=";
@@ -33,11 +36,10 @@ let
       runHook postInstall
     '';
   };
-in
-{
+in {
   programs.nvf.settings.vim = {
     # Add strudel.nvim plugin
-    startPlugins = [ strudel-nvim ];
+    startPlugins = [strudel-nvim];
 
     # Set Chromium path for Puppeteer
     luaConfigRC.strudel-env = ''

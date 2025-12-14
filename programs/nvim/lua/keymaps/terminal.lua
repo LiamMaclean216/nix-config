@@ -22,7 +22,7 @@ local lazydocker = Terminal:new({
 	},
 	hidden = true,
 	on_open = function(term)
-		vim.keymap.set("t", "q", function()
+		vim.keymap.set("t", "<C-q>", function()
 			term:close()
 		end, { buffer = term.bufnr, noremap = true, silent = true })
 	end,
@@ -84,3 +84,14 @@ vim.keymap.set(all_modes, "<C-S-v>", function()
 		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('"+p', true, false, true), "n", false)
 	end
 end, opts)
+
+-- Hook into lazygit terminal to add Ctrl+Q close keybinding
+-- Lazygit is configured in plugins.nix, so we need to add the keybinding when it opens
+vim.api.nvim_create_autocmd("TermOpen", {
+	pattern = "*lazygit*",
+	callback = function(args)
+		vim.keymap.set("t", "<C-q>", function()
+			vim.cmd("close")
+		end, { buffer = args.buf, noremap = true, silent = true })
+	end,
+})

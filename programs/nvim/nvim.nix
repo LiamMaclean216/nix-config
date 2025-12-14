@@ -1,11 +1,15 @@
-{ config, pkgs, lib, ... }:
-
 {
+  config,
+  pkgs,
+  lib,
+  ...
+}: {
   imports = [
     ./plugins.nix
     ./comment-nvim.nix
     ./languages.nix
-    # ./strudel.nix
+    ./formatter.nix
+    ./strudel.nix
     ./theme.nix
   ];
 
@@ -28,8 +32,8 @@
         ];
 
         luaConfigRC.myconfig-dir = ''
-            require("config")
-          '';
+          require("config")
+        '';
       };
     };
   };

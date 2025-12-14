@@ -19,7 +19,7 @@ in {
         "$mainMod, Q, killactive"
         "$mainMod, F, exec, dolphin"
         "$mainMod, B, exec, firefox"
-        "$mainMod, C, exec, firefox https://t3.chat"
+        "$mainMod, C, exec, firefox https://gemini.google.com"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         "$mainMod, N, exec, alacritty -e nvim +'lua vim.schedule(function() vim.cmd([[Telescope projects]]) end)'"
         # record screen selection with wf-recorder

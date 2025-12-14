@@ -6,6 +6,7 @@ require("config.config.pyright")
 require("config.config.html")
 require("config.config.gitsigns")
 require("config.theme")
+require("config.projects")
 
 vim.opt.number = true
 vim.opt.relativenumber = true
@@ -41,9 +42,35 @@ vim.opt.shiftwidth = 4        -- Number of spaces for autoindent
 vim.opt.tabstop = 4           -- Number of spaces a tab counts for
 vim.opt.softtabstop = 4       -- Number of spaces for <Tab> key
 
+-- HTML-specific indent settings (2 spaces)
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "html",
+  callback = function()
+    vim.opt_local.shiftwidth = 2
+    vim.opt_local.tabstop = 2
+    vim.opt_local.softtabstop = 2
+  end,
+})
+
+
+
+-- Configure completion
+local cmp = require('cmp')
+
+-- Global cmp setup with arrow key navigation
+cmp.setup({
+  mapping = cmp.mapping.preset.insert({
+    ['<Down>'] = cmp.mapping.select_next_item(),
+    ['<Up>'] = cmp.mapping.select_prev_item(),
+    ['<C-d>'] = cmp.mapping.scroll_docs(-4),
+    ['<C-f>'] = cmp.mapping.scroll_docs(4),
+    ['<C-Space>'] = cmp.mapping.complete(),
+    ['<C-e>'] = cmp.mapping.abort(),
+    ['<CR>'] = cmp.mapping.confirm({ select = true }),
+  }),
+})
 
 -- Configure completion for SQL
-local cmp = require('cmp')
 cmp.setup.filetype({ "sql", "mysql", "plsql" }, {
   sources = {
     { name = "vim-dadbod-completion" },
@@ -62,26 +89,38 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold", "CursorHo
   end,
 })
 
--- Format on save
-vim.api.nvim_create_autocmd("BufWritePre", {
-  callback = function()
-    vim.lsp.buf.format({ async = false })
-  end,
-})
+-- Format on save (disabled)
+-- vim.api.nvim_create_autocmd("BufWritePre", {
+--   callback = function()
+--     -- Get the current file's directory and search upward for prettier config
+--     local bufname = vim.api.nvim_buf_get_name(0)
+--     local root_dir = vim.fs.dirname(bufname)
+--
+--     -- Prettier will automatically find config files in parent directories
+--     -- The LSP formatter respects project-level configs by default
+--     vim.lsp.buf.format({
+--       async = false,
+--       -- Filter to only use formatters that support the current filetype
+--       filter = function(client)
+--         return client.name ~= "ts_ls" -- Avoid duplicate formatting if ts_ls is enabled
+--       end
+--     })
+--   end,
+-- })
 
 -- Configure completion for SQL
 local cmp = require('cmp')
 
 -- -- Setup strudel.nvim
--- local strudel = require("strudel")
--- strudel.setup({
---   update_on_save = true
--- })
+local strudel = require("strudel")
+strudel.setup({
+  update_on_save = true
+})
 
--- vim.keymap.set("n", "<leader>sl", strudel.launch, { desc = "Launch Strudel" })
--- vim.keymap.set("n", "<leader>sq", strudel.quit, { desc = "Quit Strudel" })
--- vim.keymap.set("n", "<leader>st", strudel.toggle, { desc = "Strudel Toggle Play/Stop" })
--- vim.keymap.set("n", "<leader>su", strudel.update, { desc = "Strudel Update" })
--- vim.keymap.set("n", "<leader>ss", strudel.stop, { desc = "Strudel Stop Playback" })
--- vim.keymap.set("n", "<leader>sb", strudel.set_buffer, { desc = "Strudel set current buffer" })
--- vim.keymap.set("n", "<leader>sx", strudel.execute, { desc = "Strudel set current buffer and update" })
+vim.keymap.set("n", "<leader>sl", strudel.launch, { desc = "Launch Strudel" })
+vim.keymap.set("n", "<leader>sq", strudel.quit, { desc = "Quit Strudel" })
+vim.keymap.set("n", "<leader>st", strudel.toggle, { desc = "Strudel Toggle Play/Stop" })
+vim.keymap.set("n", "<leader>su", strudel.update, { desc = "Strudel Update" })
+vim.keymap.set("n", "<leader>ss", strudel.stop, { desc = "Strudel Stop Playback" })
+vim.keymap.set("n", "<leader>sb", strudel.set_buffer, { desc = "Strudel set current buffer" })
+vim.keymap.set("n", "<leader>sx", strudel.execute, { desc = "Strudel set current buffer and update" })

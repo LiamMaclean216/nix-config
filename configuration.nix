@@ -61,6 +61,7 @@
       default_session = initial_session;
     };
   };
+    programs.nix-ld.enable = true;
 
   services.desktopManager.plasma6.enable = false;
 
@@ -112,6 +113,12 @@
 
   # Enable CUPS to print documents.
   services.printing.enable = true;
+  # Enable printer discovery on the network
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
+  };
 
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
@@ -154,8 +161,6 @@
     };
   };
 
-  programs.gpu-screen-recorder.enable = true;
-
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
@@ -168,6 +173,7 @@
     lazydocker
     lazygit
     git
+    openssl
     gh
     spotify
     neovim
@@ -178,7 +184,6 @@
     xclip
     github-desktop
     bluez
-    gpu-screen-recorder-gtk
     wf-recorder
     bluez-tools
     blueman
@@ -190,15 +195,6 @@
     supabase-cli
     act
     postgresql # Provides psql for vim-dadbod
-
-    # GStreamer plugins for Kooha screen recording
-    gst_all_1.gstreamer
-    gst_all_1.gst-plugins-base
-    gst_all_1.gst-plugins-good
-    gst_all_1.gst-plugins-bad
-    gst_all_1.gst-plugins-ugly
-    gst_all_1.gst-vaapi
-    gst_all_1.gst-libav
 
     pipewire # Ensure gstreamer plugin is available
 
@@ -226,6 +222,7 @@
     pavucontrol
     wdisplays
     wlogout
+    system-config-printer
 
     kdePackages.qtsvg
     kdePackages.kio-fuse #to mount remote filesystems via FUSE
@@ -238,6 +235,7 @@
 
   environment.shellAliases = {
     matrix = "unimatrix -n -s 96 -l o";
+    avenv = "source ~/.venv/bin/activate";
   };
 
   nixpkgs.config.permittedInsecurePackages = [
@@ -319,6 +317,7 @@
       "application/pdf" = ["firefox.desktop"];
     };
   };
+  programs.obs-studio.enable = true; # enables OBS plugins packaged by NixOS
 
   xdg.portal.enable = true;
   xdg.portal.extraPortals = with pkgs; [
