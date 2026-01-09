@@ -111,23 +111,7 @@
       enable = true;
       highlight.enable = true;
       fold = true;
-      grammars = with pkgs.vimPlugins.nvim-treesitter.builtGrammars; [
-        python
-        go
-        nix
-        html
-        css
-        javascript
-        typescript
-        tsx
-        svelte
-        sql
-        yaml
-        json
-        lua
-        markdown
-        bash
-      ];
+      grammars = pkgs.vimPlugins.nvim-treesitter.passthru.allGrammars;
     };
   };
 }
