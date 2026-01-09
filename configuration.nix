@@ -5,6 +5,7 @@
   inputs,
   config,
   pkgs,
+  lib,
   ...
 }: {
   imports = [
@@ -12,7 +13,36 @@
     ./hardware-configuration.nix
     ./nvidia.nix
     ./fonts.nix
+    ./programs/firefox.nix
   ];
+
+  # Stylix configuration
+  stylix.enable = true;
+
+  # Option 1: Use a scheme from stylix's included themes
+  stylix.base16Scheme = "${inputs.stylix.inputs.tinted-schemes}/base16/gruvbox-dark-hard.yaml";
+
+  # Option 2: Or generate colors from a wallpaper (comment out base16Scheme if using this)
+  # stylix.image = ./path/to/your/wallpaper.png;
+
+  # Set the polarity
+  stylix.polarity = "dark";  # or "light"
+
+  # Optional: Configure fonts
+  # stylix.fonts = {
+  #   monospace = {
+  #     package = pkgs.nerdfonts.override { fonts = [ "FiraCode" ]; };
+  #     name = "FiraCode Nerd Font Mono";
+  #   };
+  #   sansSerif = {
+  #     package = pkgs.dejavu_fonts;
+  #     name = "DejaVu Sans";
+  #   };
+  #   serif = {
+  #     package = pkgs.dejavu_fonts;
+  #     name = "DejaVu Serif";
+  #   };
+  # };
 
   # env vars configured later alongside Wayland tweaks
   hardware.bluetooth = {
@@ -62,6 +92,16 @@
     };
   };
     programs.nix-ld.enable = true;
+    programs.nix-ld.libraries = with pkgs; [
+      stdenv.cc.cc.lib  # provides libstdc++.so.6
+      zlib
+      # Additional libraries for Python packages like jax
+      glib
+      glibc
+      libz
+      libGL
+      libGLU
+    ];
 
   services.desktopManager.plasma6.enable = false;
 
@@ -151,16 +191,6 @@
   # Allow wheel group users to run sudo without a password
   security.sudo.wheelNeedsPassword = false;
 
-  # Install firefox.
-  programs.firefox = {
-    enable = true;
-    preferences = {
-      "ui.systemUsesDarkTheme" = 1;
-      "browser.theme.content-theme" = 0;
-      "browser.theme.toolbar-theme" = 0;
-    };
-  };
-
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
@@ -183,11 +213,8 @@
     awsebcli
     xclip
     github-desktop
-    bluez
     wf-recorder
     bluez-tools
-    blueman
-    usbutils
     nodejs
     # redisinsight
     mako
@@ -200,10 +227,12 @@
 
     ripgrep
     cbonsai
+    asciiquarium-transparent
     fastfetch
     (flameshot.override {enableWlrSupport = true;})
     grim
     slurp
+    wf-recorder 
 
     qdirstat
     mission-center
@@ -218,7 +247,6 @@
     wofi
     hyprshot
     imv
-    pulseaudio
     pavucontrol
     wdisplays
     wlogout
@@ -339,7 +367,9 @@
     #WLR_NO_HARDWARE_CURSORS = lib.mkDefault "1";
   };
 
+  # CoolerControl for GPU and system fan management
   programs.coolercontrol.enable = true;
   programs.coolercontrol.nvidiaSupport = true;
+
   powerManagement.cpuFreqGovernor = "performance";
 }

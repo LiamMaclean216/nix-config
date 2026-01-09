@@ -22,23 +22,36 @@ in {
   # release notes.
   home.stateVersion = "25.05"; # Please read the comment before changing.
 
+  # Enable Qt theming with stylix
+  qt.enable = true;
+  qt.platformTheme.name = "qtct";
+  qt.style.name = "kvantum";
+
+  # Stylix Qt theming
+  stylix.targets.qt.enable = true;
+
   home.packages = [
+    pkgs.libsForQt5.qt5ct
+    pkgs.libsForQt5.qtstyleplugin-kvantum
+    pkgs.kdePackages.qtstyleplugin-kvantum
     pkgs.hello
-    pkgs.lazygit
     pkgs.wl-clipboard
-    pkgs.hyprpaper
-    pkgs.hyprshot
-    pkgs.hypridle
     pkgs.ruff
 
     myPython
   ];
-  programs.hyprlock.enable = true;
   nixpkgs.config.allowUnfree = true;
 
   home.sessionVariables = {
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
     TERMINAL = "alacritty";
+    LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [
+      pkgs.stdenv.cc.cc.lib
+      pkgs.zlib
+      pkgs.glib
+      pkgs.libGL
+      pkgs.libGLU
+    ]}";
   };
 
   # ensure $HOME/node_modules/bin is on PATH at shell runtime
@@ -75,40 +88,6 @@ in {
     source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
     recursive = true;
   };
-
-  # Hyprland configuration moved to module file
-  #home.file.".config/hypr/hyprland.conf".source = ./desktop/hyprland.conf;
-
-  # Hyprpaper: set wallpaper to the repository image
-  home.file.".config/hypr/hyprpaper.conf".text = ''
-    preload = /home/liam/nix-config/desktop/background.webp
-    wallpaper = ,/home/liam/nix-config/desktop/background.webp
-  '';
-  xdg.configFile."hypr/hypridle.conf".text = ''
-    general {
-      after_sleep_cmd = hyprctl dispatch dpms on
-      lock_cmd = pidof hyprlock || hyprlock
-    }
-
-    listener {
-      timeout = 150
-      on-timeout = loginctl lock-session
-    }
-
-    listener {
-      timeout = 180
-      on-timeout = hyprctl dispatch dpms off
-      on-resume = hyprctl dispatch dpms on
-    }
-
-    listener {
-      timeout = 3600
-      on-timeout = systemctl suspend
-      on-resume = hyprctl dispatch dpms on
-    }
-  '';
-
-  home.file.".config/hypr/hyprlock.conf".source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/hyprlock.conf");
 
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
     VENV="$HOME/.venv"
@@ -161,9 +140,13 @@ in {
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
     ./desktop/hyprland.nix
+    ./desktop/hyprpaper.nix
+    ./desktop/hypridle.nix
+    ./desktop/hyprlock.nix
     ./desktop/workspaces.nix
     ./desktop/keybindings.nix
     ./desktop/waybar.nix
     ./desktop/mako.nix
+    ./desktop/screen-record.nix
   ];
 }

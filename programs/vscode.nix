@@ -5,7 +5,7 @@
     enable = true;
 
     profiles.default.userSettings = {
-      "python.analysis.typeCheckingMode" = "strict";
+      "python.analysis.typeCheckingMode" = "basic";
       "explorer.confirmDelete" = false;
 
       "vim.useSystemClipboard" = true;
@@ -31,7 +31,7 @@
       ms-toolsai.jupyter-keymap
       ms-toolsai.jupyter-renderers
       ms-python.vscode-pylance
-      #vscodevim.vim
+      vscodevim.vim
     ];
 
     profiles.default.keybindings = [

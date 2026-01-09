@@ -12,11 +12,11 @@
         treesitter.enable = true;
         lsp = {
           enable = true;
-          server = "pyright"; # Provides inline diagnostics, type checking, and auto-imports
+          servers = ["pyright"]; # Provides inline diagnostics, type checking, and auto-imports
         };
         format = {
           enable = true;
-          type = "ruff"; # Fast linter and formatter
+          type = ["ruff"]; # Fast linter and formatter
         };
       };
 
@@ -26,7 +26,7 @@
         treesitter.enable = true;
         lsp = {
           enable = true;
-          server = "gopls";
+          servers = ["gopls"];
         };
         format.enable = true;
       };
@@ -37,7 +37,7 @@
         treesitter.enable = true;
         lsp = {
           enable = true;
-          server = "nixd";
+          servers = ["nixd"];
         };
         format.enable = true;
       };
@@ -60,12 +60,12 @@
         treesitter.enable = true;
         lsp = {
           enable = true;
-          server = "ts_ls"; # Supports JSX/TSX and React
+          servers = ["ts_ls"]; # Supports JSX/TSX and React
         };
-        format = {
-          enable = true;
-          package = pkgs.nodePackages.prettier;
-        };
+        # format = {
+        #   enable = true;
+        #   package = pkgs.nodePackages.prettier;
+        # };
       };
 
       # Svelte
@@ -75,10 +75,10 @@
         lsp = {
           enable = true;
         };
-        format = {
-          enable = true;
-          package = pkgs.nodePackages.prettier;
-        };
+        # format = {
+        #   enable = true;
+        #   package = pkgs.nodePackages.prettier;
+        # };
       };
 
       # SQL
@@ -111,11 +111,22 @@
       enable = true;
       highlight.enable = true;
       fold = true;
-      grammars = [
-        pkgs.vimPlugins.nvim-treesitter.builtGrammars.typescript
-        pkgs.vimPlugins.nvim-treesitter.builtGrammars.tsx
-        pkgs.vimPlugins.nvim-treesitter.builtGrammars.javascript
-        # pkgs.vimPlugins.nvim-treesitter.builtGrammars.jsx
+      grammars = with pkgs.vimPlugins.nvim-treesitter.builtGrammars; [
+        python
+        go
+        nix
+        html
+        css
+        javascript
+        typescript
+        tsx
+        svelte
+        sql
+        yaml
+        json
+        lua
+        markdown
+        bash
       ];
     };
   };

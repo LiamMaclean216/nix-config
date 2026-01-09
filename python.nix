@@ -2,8 +2,9 @@
 { pkgs }:
 
 pkgs.python311.withPackages (ps: with ps; [
+  (pydevd.overridePythonAttrs (old: { doCheck = false; }))
   ipykernel
-  jupyterlab
+  # jupyterlab
   notebook
   numpy
   pandas

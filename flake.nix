@@ -15,6 +15,9 @@
       url = "github:hyprwm/hyprland-plugins";
       inputs.hyprland.follows = "hyprland";
     };
+
+    stylix.url = "github:nix-community/stylix/release-25.05";
+    stylix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs@{self, nixpkgs, home-manager, nvf, ...}:
@@ -26,7 +29,10 @@
       nixosConfigurations = {
         nixos = lib.nixosSystem {
           inherit system;
-          modules = [ ./configuration.nix  ];
+          modules = [
+            inputs.stylix.nixosModules.stylix
+            ./configuration.nix
+          ];
           specialArgs = { inherit inputs; };
         };
       };
@@ -34,6 +40,7 @@
         liam = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = [
+            inputs.stylix.homeModules.stylix
             nvf.homeManagerModules.default
             ./home.nix
           ];
