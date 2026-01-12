@@ -38,7 +38,7 @@ in
       passthrough = false;
       height = 32;
       spacing = 6;
-      margin = "0 10 10 0";
+      margin = "0 5 5 0";
       modules-left = [ ];
       modules-center = [ ];
       modules-right = [  "clock" ];
