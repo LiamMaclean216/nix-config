@@ -35,17 +35,17 @@ in
       layer = "overlay";
       position = "bottom";
       exclusive = false;
-      passthrough = true;
+      passthrough = false;
       height = 32;
       spacing = 6;
-      margin = "0 18 18 0";
+      margin = "0 10 10 0";
       modules-left = [ ];
       modules-center = [ ];
       modules-right = [  "clock" ];
 
       clock = {
         format = "{:%a %d %b  %H:%M}";
-        tooltip-format = "{:%A, %d %B %Y}\n%H:%M";
+        tooltip = false;
       };
     };
 
@@ -66,21 +66,20 @@ in
         margin: 0;
       }
 
-      #modules-right {
-        background: rgba(8, 12, 24, 0.78);
-        border-radius: 999px;
-        padding: 8px 8px;
-        border: 1px solid rgba(142, 162, 219, 0.35);
-        box-shadow: 0 12px 32px rgba(5, 6, 11, 0.55);
-      }
-
-      #modules-right > * {
-        margin: 0;
-      }
-
       #clock {
-        letter-spacing: 0.5px;
-        color: #f5f7ff;
+        background: rgb(30, 30, 35);
+        border-radius: 999px;
+        padding: 11px 20px 9px 20px;
+        letter-spacing: 0.3px;
+        color: #ffffff;
+        border: 1px solid rgb(0, 0, 0);
+        transition: opacity 0.3s ease;
+        font-family: "FiraCode Nerd Font", monospace;
+        font-weight: 400;
+      }
+
+      #clock:hover {
+        opacity: 0;
       }
     '';
   };
