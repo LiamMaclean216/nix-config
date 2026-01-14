@@ -35,7 +35,7 @@ in
       layer = "overlay";
       position = "bottom";
       exclusive = false;
-      passthrough = false;
+      passthrough = true;
       height = 32;
       spacing = 6;
       margin = "0 5 5 0";

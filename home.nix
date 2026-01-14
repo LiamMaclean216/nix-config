@@ -136,6 +136,7 @@ in {
     ./programs/vscode.nix
     ./programs/codex.nix
     ./programs/claude-code.nix
+    ./programs/opencode.nix
     ./programs/gemini-cli.nix
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
