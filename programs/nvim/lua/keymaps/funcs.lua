@@ -161,7 +161,7 @@ function M.OpenClaudeTerminal(file_reference)
 	if not claude_terminal then
 		local Terminal = require("toggleterm.terminal").Terminal
 		claude_terminal = Terminal:new({
-			cmd = "opencode",
+			cmd = "opencodevenv",
 			direction = "float",
 			float_opts = {
 				border = "curved",

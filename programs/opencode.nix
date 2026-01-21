@@ -10,12 +10,8 @@ let
   '';
 
   # Wrapper script that activates venv before running opencode
-  opencodeWrapper = pkgs.writeShellScriptBin "opencode" ''
-    # Activate the venv if it exists
-    if [ -f "$HOME/.venv/bin/activate" ]; then
-      source "$HOME/.venv/bin/activate"
-    fi
-    # Run the actual opencode binary
+  opencodeWrapper = pkgs.writeShellScriptBin "opencodevenv" ''
+    source ~/.venv/bin/activate
     exec "$HOME/node_modules/bin/opencode" "$@"
   '';
 in {

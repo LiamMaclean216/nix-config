@@ -110,6 +110,7 @@
     treesitter = {
       enable = true;
       highlight.enable = true;
+      indent.enable = true;  # Required for proper indentation (Python, etc.)
       fold = true;
       grammars = pkgs.vimPlugins.nvim-treesitter.passthru.allGrammars;
     };

@@ -60,7 +60,7 @@ in {
     umask 0002
 
     if [ -d "$HOME/node_modules/bin" ] && ! echo "$PATH" | grep -q "$HOME/node_modules/bin"; then
-      export PATH="$HOME/node_modules/bin:$PATH"
+      export PATH="$PATH:$HOME/node_modules/bin"
     fi
   '';
 

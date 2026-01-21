@@ -30,3 +30,8 @@ vim.api.nvim_set_keymap("i", "<C-s>", "<Esc><cmd>w<CR>", opts)
 vim.api.nvim_set_keymap("n", "gd", "<cmd>lua vim.lsp.buf.definition()<CR>", opts)
 vim.api.nvim_set_keymap("n", "<F2>", "<cmd>lua vim.lsp.buf.rename()<CR>", opts)
 vim.api.nvim_set_keymap("n", "<A-S-f>", ":lua vim.lsp.buf.format()<CR>", opts)
+
+-- LSP troubleshooting
+vim.keymap.set("n", "<leader>lr", "<cmd>LspRestart<CR>", { desc = "Restart LSP" })
+vim.keymap.set("n", "<leader>li", "<cmd>LspInfo<CR>", { desc = "LSP Info" })
+vim.keymap.set("n", "<leader>ll", "<cmd>LspLog<CR>", { desc = "LSP Log" })

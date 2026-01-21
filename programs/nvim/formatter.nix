@@ -11,6 +11,7 @@
       setupOpts = {
         formatters_by_ft = {
           html = ["prettier"];
+          python = ["ruff_format"];
         };
         formatters = {
           prettier = {

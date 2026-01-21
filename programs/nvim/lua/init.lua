@@ -52,6 +52,18 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 
+-- Python-specific settings: use treesitter for indentation (fixes = operator)
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "python",
+  callback = function()
+    vim.bo.indentexpr = "nvim_treesitter#indent()"
+    -- Use conform (ruff) for = in visual mode
+    vim.keymap.set("v", "=", function()
+      require("conform").format({ async = false, lsp_fallback = false })
+    end, { buffer = true, desc = "Format selection with ruff" })
+  end,
+})
+
 
 
 -- Configure completion
