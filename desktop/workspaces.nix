@@ -6,6 +6,9 @@ let
     if ! pgrep -x spotify > /dev/null; then
       spotify &
     fi
+    if ! pgrep -f "alacritty --class notes-scratchpad" > /dev/null; then
+      alacritty --class notes-scratchpad -e nvim ~/notes.txt &
+    fi
     hyprctl dispatch togglespecialworkspace spotify
   '';
 in
@@ -15,6 +18,7 @@ in
       # Startup
       "exec-once" = [
         "spotify"
+        "alacritty --class notes-scratchpad -e nvim ~/notes.txt"
       ];
 
       # Keybinds
@@ -26,9 +30,14 @@ in
       # Window rules for Spotify scratchpad
       windowrulev2 = [
         "float, class:^(Spotify)$"
-        "size 70% 70%, class:^(Spotify)$"
-        "center, class:^(Spotify)$"
+        "size 35% 70%, class:^(Spotify)$"
+        "move 55% 15%, class:^(Spotify)$"
         "workspace special:spotify silent, class:^(Spotify)$"
+
+        "float, class:^(notes-scratchpad)$"
+        "size 35% 70%, class:^(notes-scratchpad)$"
+        "move 10% 15%, class:^(notes-scratchpad)$"
+        "workspace special:spotify silent, class:^(notes-scratchpad)$"
       ];
     };
   };
