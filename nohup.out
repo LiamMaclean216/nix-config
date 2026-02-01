@@ -1,5 +1,0 @@
-[2026-01-12 21:44:14.466] [info] Using configuration file /home/liam/.config/waybar/config
-[2026-01-12 21:44:14.468] [info] Discovered appearance 'dark'
-[2026-01-12 21:44:14.476] [info] Using CSS file /home/liam/.config/waybar/style.css
-[2026-01-12 21:44:14.485] [warning] Requested height: 32 is less than the minimum height: 42 required by the modules
-[2026-01-12 21:44:14.485] [info] Bar configured (width: 3435, height: 42) for output: DP-2

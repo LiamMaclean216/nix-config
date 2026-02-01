@@ -1,8 +1,15 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
+let
+  pkgs-unstable = import inputs.nixpkgs-unstable {
+    system = pkgs.system;
+    config.allowUnfree = true;
+  };
+in
 {
   programs.vscode = {
     enable = true;
+    package = pkgs-unstable.vscode;
 
     profiles.default.userSettings = {
       "python.analysis.typeCheckingMode" = "basic";
@@ -25,7 +32,7 @@
       "python.analysis.inlayHints.pytestParameters" = false;
     };
 
-    profiles.default.extensions = with pkgs.vscode-extensions; [
+    profiles.default.extensions = with pkgs-unstable.vscode-extensions; [
       ms-python.python
       ms-toolsai.jupyter
       ms-toolsai.jupyter-keymap
