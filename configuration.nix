@@ -52,6 +52,10 @@ in
   services.blueman.enable = true;
   boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"];
   boot.kernelPackages = pkgs.linuxPackages_latest;
+  
+  # Enable firmware updates for WiFi and other hardware
+  hardware.enableRedistributableFirmware = true;
+  hardware.firmware = [ pkgs-unstable.linux-firmware ];
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -180,6 +184,7 @@ in
     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     wget
     pkgs-unstable.vesktop
+    # pkgs-unstable.discord
     lazydocker
     lazygit
     git

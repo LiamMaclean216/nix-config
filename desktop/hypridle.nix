@@ -14,14 +14,14 @@
     }
 
     listener {
-      timeout = 150
-      on-timeout = loginctl lock-session
-    }
-
-    listener {
       timeout = 180
       on-timeout = hyprctl dispatch dpms off
       on-resume = hyprctl dispatch dpms on
+    }
+
+    listener {
+      timeout = 10800
+      on-timeout = loginctl lock-session
     }
 
   '';
