@@ -173,6 +173,12 @@ function M.OpenClaudeTerminal(file_reference)
 				vim.keymap.set("t", "<C-q>", function()
 					term:close()
 				end, { buffer = term.bufnr, noremap = true, silent = true })
+
+				vim.keymap.set("t", "<C-t>", function()
+					if term.job_id then
+						vim.api.nvim_chan_send(term.job_id, string.char(20))
+					end
+				end, { buffer = term.bufnr, noremap = true, silent = true })
 			end,
 		})
 	end

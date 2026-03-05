@@ -24,9 +24,9 @@
 
   # 3. Enable "Coolbits" to unlock Fan Control
   # This adds Option "Coolbits" "4" to the Xorg config
-  services.xserver.deviceSection = ''
-    Option "Coolbits" "4"
-  '';
+  # services.xserver.deviceSection = ''
+  #   Option "Coolbits" "4"
+  # '';
 
   # 4. Systemd Service to Enforce Power Limit at Boot
   # This runs as root before you even log in.

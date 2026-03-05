@@ -50,12 +50,19 @@ in
     };
   };
   services.blueman.enable = true;
-  boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"];
-  boot.kernelPackages = pkgs.linuxPackages_latest;
+  # boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"]; # Conflicting/unnecessary modules removed
+  # Switch to default LTS kernel for better stability
+  boot.kernelPackages = pkgs.linuxPackages;
+
+  # Fix for MediaTek MT7925e WiFi card hanging/disappearing
+  # Disables Active State Power Management (ASPM) to prevent hardware lockups
+  boot.extraModprobeConfig = ''
+    options mt7925e disable_aspm=1 power_save=0
+  '';
   
   # Enable firmware updates for WiFi and other hardware
   hardware.enableRedistributableFirmware = true;
-  hardware.firmware = [ pkgs-unstable.linux-firmware ];
+  hardware.firmware = [ pkgs.linux-firmware ];
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
@@ -98,6 +105,7 @@ in
 
   # Enable networking
   networking.networkmanager.enable = true;
+  networking.networkmanager.wifi.powersave = false;
 
   # Set your time zone.
   time.timeZone = "America/Toronto";
@@ -137,12 +145,12 @@ in
 
   # Enable CUPS to print documents.
   services.printing.enable = true;
-  # Enable printer discovery on the network
-  services.avahi = {
-    enable = true;
-    nssmdns4 = true;
-    openFirewall = true;
-  };
+  # Disabled: avahi causes hanging on shutdown ("CUPS printer discovery")
+  # services.avahi = {
+  #   enable = true;
+  #   nssmdns4 = true;
+  #   openFirewall = true;
+  # };
 
   # Enable sound with pipewire.
   services.pulseaudio.enable = false;
@@ -183,7 +191,7 @@ in
   environment.systemPackages = with pkgs; [
     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     wget
-    pkgs-unstable.vesktop
+    # pkgs-unstable.vesktop
     # pkgs-unstable.discord
     lazydocker
     lazygit
@@ -194,6 +202,7 @@ in
     neovim
     neovide
     libreoffice
+    pinta
     beekeeper-studio
     awsebcli
     xclip
@@ -353,8 +362,8 @@ in
   };
 
   # CoolerControl for GPU and system fan management
-  programs.coolercontrol.enable = true;
-  programs.coolercontrol.nvidiaSupport = true;
+  # programs.coolercontrol.enable = true;
+  # programs.coolercontrol.nvidiaSupport = true;
 
   powerManagement.cpuFreqGovernor = "performance";
 }
