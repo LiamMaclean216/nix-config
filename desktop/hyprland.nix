@@ -116,6 +116,7 @@ in
         "hyprctl setcursor Adwaita 24"
         "waybar"
         "${waybarHideScript}"
+        "systemctl --user start --no-block hyprlock-solar-times.service"
         "hypridle"
         "hyprlock || hyprctl dispatch exit"
       ];

@@ -45,6 +45,10 @@ in {
   home.sessionVariables = {
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
     TERMINAL = "alacritty";
+    HYPRLOCK_SOLAR_DEFAULT_TZ = "America/Toronto";
+    HYPRLOCK_SOLAR_DEFAULT_CITY = "Toronto";
+    HYPRLOCK_SOLAR_DEFAULT_LAT = "43.6532";
+    HYPRLOCK_SOLAR_DEFAULT_LON = "-79.3832";
     LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [
       pkgs.stdenv.cc.cc.lib
       pkgs.zlib
