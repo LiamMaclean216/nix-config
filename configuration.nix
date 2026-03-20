@@ -32,14 +32,12 @@ in
       General = {
         # Shows battery charge of connected devices on supported
         # Bluetooth adapters. Defaults to 'false'.
-        AutoEnable = true; # bluez: power on any newly found adapters
         Experimental = true;
         # When enabled other devices can connect faster to us, however
         # the tradeoff is increased power consumption. Defaults to
         # 'false'.
         FastConnectable = true;
         ControllerMode = "dual";
-        Enable = "Source,Sink,Media,Socket";
       };
       Policy = {
         # Enable all controllers when they are found. This includes
@@ -169,29 +167,68 @@ in
             "bluez5.enable-sbc-xq" = true;
             "bluez5.enable-msbc" = true;
             "bluez5.enable-hw-volume" = true;
+            "bluez5.dummy-avrcp-player" = true;
             "bluez5.roles" = [
               "a2dp_sink"
               "a2dp_source"
-              "bap_sink"
-              "bap_source"
-              "hsp_hs"
-              "hsp_ag"
               "hfp_hf"
               "hfp_ag"
-            ];
-            "bluez5.codecs" = [
-              "sbc"
-              "sbc_xq"
-              "aac"
-              "ldac"
-              "aptx"
-              "aptx_hd"
+              "hsp_hs"
+              "hsp_ag"
             ];
           };
+          "monitor.bluez.rules" = [
+            {
+              matches = [
+                {
+                  "device.name" = "~bluez_card.*";
+                }
+              ];
+              actions = {
+                "update-props" = {
+                  "bluez5.auto-connect" = [
+                    "a2dp_sink"
+                    "hfp_hf"
+                    "hfp_ag"
+                    "hsp_hs"
+                    "hsp_ag"
+                  ];
+                };
+              };
+            }
+          ];
         };
         "11-bluetooth-policy" = {
           "wireplumber.settings" = {
-            "bluetooth.autoswitch-to-headset-profile" = "always";
+            "bluetooth.autoswitch-to-headset-profile" = false;
+            "device.restore-profile" = false;
+          };
+        };
+        "12-bluetooth-profile-priority" = {
+          "device.profile.priority.rules" = [
+            {
+              matches = [
+                {
+                  "device.name" = "~bluez_card.*";
+                }
+              ];
+              actions = {
+                "update-props" = {
+                  priorities = [
+                    "a2dp-sink"
+                    "a2dp-sink-sbc_xq"
+                    "a2dp-sink-sbc"
+                    "headset-head-unit"
+                    "headset-head-unit-cvsd"
+                  ];
+                };
+              };
+            }
+          ];
+        };
+        "13-bluetooth-settings" = {
+          "wireplumber.settings" = {
+            "device.restore-routes" = true;
           };
         };
       };
@@ -202,14 +239,23 @@ in
   # services.xserver.libinput.enable = true;
 
   # Define a user account. Don't forget to set a password with 'passwd'.
+    hardware.bluetooth.settings.Policy.ReconnectAttempts = 0;
+  users.groups.librepods = {};
   users.users.liam = {
     isNormalUser = true;
     description = "Liam";
-    extraGroups = ["networkmanager" "wheel" "docker"];
+    extraGroups = ["networkmanager" "wheel" "docker" "librepods"];
     packages = with pkgs; [
       kdePackages.kate
       #  thunderbird
     ];
+  };
+
+  security.wrappers.librepods = {
+    source = lib.getExe' pkgs-unstable.librepods "librepods";
+    capabilities = "cap_net_admin+ep";
+    owner = "root";
+    group = "librepods";
   };
 
   # Enable sudo
@@ -243,6 +289,7 @@ in
     github-desktop
     wf-recorder
     bluez-tools
+    pkgs-unstable.librepods
     nodejs
     # redisinsight
     mako
@@ -250,8 +297,6 @@ in
     supabase-cli
     act
     postgresql # Provides psql for vim-dadbod
-
-    pipewire # Ensure gstreamer plugin is available
 
     ripgrep
     cbonsai
