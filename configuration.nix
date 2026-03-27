@@ -239,7 +239,7 @@ in
   # services.xserver.libinput.enable = true;
 
   # Define a user account. Don't forget to set a password with 'passwd'.
-    hardware.bluetooth.settings.Policy.ReconnectAttempts = 0;
+  hardware.bluetooth.settings.Policy.ReconnectAttempts = 7;
   users.groups.librepods = {};
   users.users.liam = {
     isNormalUser = true;

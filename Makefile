@@ -1,4 +1,4 @@
-.PHONY: nixos home hypr all update cleanup resetairpods
+.PHONY: nixos home hypr all update cleanup resetairpods trustairpods
 
 AIRPODS_MAC ?= 9C:F3:AC:2C:E7:C6
 BT_ADAPTER ?= 5C:F3:70:94:5F:A2
@@ -33,6 +33,11 @@ resetairpods:
 	sudo systemctl restart bluetooth
 	sleep 2
 	bluetoothctl info '$(AIRPODS_MAC)' || true
+
+# Mark AirPods as trusted so reconnects work reliably
+trustairpods:
+	bluetoothctl trust '$(AIRPODS_MAC)'
+	bluetoothctl info '$(AIRPODS_MAC)'
 
 # Do everything: NixOS, Home Manager, then Hyprland reload
 all: nixos home hypr
