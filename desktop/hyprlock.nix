@@ -1,4 +1,8 @@
-{pkgs, ...}: let
+{
+  config,
+  pkgs,
+  ...
+}: let
   hyprlockSolar = pkgs.writeShellApplication {
     name = "hyprlock-solar";
     runtimeInputs = [
@@ -194,14 +198,26 @@
     '';
   };
 
+  hyprlockWindows = pkgs.writeShellApplication {
+    name = "hyprlock-windows-reboot";
+    runtimeInputs = [pkgs.systemd];
+    text = ''
+      exec systemctl reboot --boot-loader-entry=auto-windows
+    '';
+  };
+
   hyprlockConfig = builtins.replaceStrings
-    ["@HYPRLOCK_SOLAR@"]
-    ["${hyprlockSolar}/bin/hyprlock-solar"]
+    ["@HYPRLOCK_SOLAR@" "@HYPRLOCK_WINDOWS@" "@HYPRLOCK_WINDOWS_ICON@"]
+    [
+      "${hyprlockSolar}/bin/hyprlock-solar"
+      "${hyprlockWindows}/bin/hyprlock-windows-reboot"
+      "${config.home.homeDirectory}/nix-config/desktop/wlogout/windows.png"
+    ]
     (builtins.readFile ./hyprlock.conf);
 in {
   programs.hyprlock.enable = true;
 
-  home.packages = [hyprlockSolar];
+  home.packages = [hyprlockSolar hyprlockWindows];
 
   home.file.".config/hypr/hyprlock.conf".text = hyprlockConfig;
 

@@ -114,7 +114,7 @@ in
         "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
-        "/run/wrappers/bin/librepods"
+        # "/run/wrappers/bin/librepods"
         "waybar"
         "${waybarHideScript}"
         "systemctl --user start --no-block hyprlock-solar-times.service"

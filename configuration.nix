@@ -332,6 +332,7 @@ in
     kdePackages.dolphin
     adwaita-icon-theme # Adwaita cursor (includes cursors)
     unimatrix
+    ninvaders
   ];
 
   environment.shellAliases = {

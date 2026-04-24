@@ -1,9 +1,4 @@
 {
-    "label" : "lock",
-    "action" : "hyprlock",
-    "keybind" : "l"
-}
-{
     "label" : "reboot",
     "action" : "systemctl reboot || loginctl reboot",
     "keybind" : "r"
@@ -18,4 +13,10 @@
     "label" : "shutdown",
     "action" : "systemctl poweroff || loginctl poweroff",
     "keybind" : "s"
+}
+{
+    "label" : "windows",
+    "action" : "systemctl reboot --boot-loader-entry=auto-windows",
+    "text" : "",
+    "keybind" : "w"
 }
