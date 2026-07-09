@@ -1,33 +1,25 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, inputs, ... }:
 
 let
-  npmInstall = lib.hm.dag.entryAfter ["installPackages"] ''
-    export PATH=${pkgs.nodejs}/bin:$PATH
-    mkdir -p "$HOME/node_modules"
-    if [ ! -x "$HOME/node_modules/bin/claude-code" ]; then
-      npm install -g @anthropic-ai/claude-code --prefix "$HOME/node_modules" --ignore-scripts
-    fi
+  claude-code = inputs.nix-claude-code.packages.${pkgs.system}.default;
+
+  pkgs-unstable = import inputs.nixpkgs-unstable {
+    system = pkgs.system;
+    config.allowUnfree = true;
+  };
+
+  # Wrapper script that activates venv before running claude
+  claudeWrapper = pkgs.writeShellScriptBin "claudevenv" ''
+    source ~/.venv/bin/activate
+    exec "${claude-code}/bin/claude" "$@"
+  '';
+
+  # Wrapper script that activates venv before running cursor-agent
+  cursorWrapper = pkgs.writeShellScriptBin "cursorvenv" ''
+    source ~/.venv/bin/activate
+    exec "${pkgs-unstable.cursor-cli}/bin/cursor-agent" "$@"
   '';
 in {
-  home.activation.npmInstallClaudeCode = npmInstall;
-
-  home.file.".claude/settings.json".text = ''
-    {
-      "apiKeyHelper": "${config.home.homeDirectory}/.claude/anthropic_key.sh"
-    }
-  '';
-
-  home.file.".claude/anthropic_key.sh" = {
-    text = ''
-      #!/usr/bin/env bash
-      if [ -f "${config.home.homeDirectory}/nix-config/.env" ]; then
-          source "${config.home.homeDirectory}/nix-config/.env"
-          echo "$ANTHROPIC_API_KEY"
-      else
-          echo "Error: ANTHROPIC_API_KEY not found in ${config.home.homeDirectory}/nix-config/.env" >&2
-          exit 1
-      fi
-    '';
-    executable = true;
-  };
+  # Add the wrappers to PATH
+  home.packages = [ claudeWrapper cursorWrapper ];
 }

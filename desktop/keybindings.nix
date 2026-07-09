@@ -19,7 +19,7 @@ in {
         "$mainMod, Q, killactive"
         "$mainMod, F, exec, dolphin"
         "$mainMod, B, exec, firefox"
-        "$mainMod, C, exec, firefox https://gemini.google.com"
+        "$mainMod, C, exec, firefox https://claude.ai/new"
         "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
         "$mainMod, N, exec, alacritty -e nvim +'lua vim.schedule(function() vim.cmd([[Telescope projects]]) end)'"
         # record screen selection with wf-recorder
@@ -53,11 +53,11 @@ in {
         # fullscreen
         "$mainMod, m, fullscreen"
 
-        # volume/media keys
-        ", XF86AudioRaiseVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ +10%"
-        ", XF86AudioLowerVolume, exec, pactl set-sink-volume @DEFAULT_SINK@ -10%"
-        ", XF86AudioMute, exec, pactl set-sink-mute @DEFAULT_SINK@ toggle"
-        ", XF86AudioMicMute, exec, pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+        # volume/media keys — wpctl with --limit 2.0 so we can boost past pulse's 153% UI cap
+        ", XF86AudioRaiseVolume, exec, wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%+"
+        ", XF86AudioLowerVolume, exec, wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%-"
+        ", XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+        ", XF86AudioMicMute, exec, wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"
       ];
 
       # mouse bindings

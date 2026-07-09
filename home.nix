@@ -37,6 +37,7 @@ in {
     pkgs.hello
     pkgs.wl-clipboard
     pkgs.ruff
+    pkgs.android-tools
 
     myPython
   ];
@@ -49,6 +50,9 @@ in {
     HYPRLOCK_SOLAR_DEFAULT_CITY = "Toronto";
     HYPRLOCK_SOLAR_DEFAULT_LAT = "43.6532";
     HYPRLOCK_SOLAR_DEFAULT_LON = "-79.3832";
+    # Common Android SDK location when installing emulator/build tools later.
+    ANDROID_HOME = "${config.home.homeDirectory}/Android/Sdk";
+    ANDROID_SDK_ROOT = "${config.home.homeDirectory}/Android/Sdk";
     LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [
       pkgs.stdenv.cc.cc.lib
       pkgs.zlib
@@ -56,6 +60,17 @@ in {
       pkgs.libGL
       pkgs.libGLU
     ]}";
+  };
+
+  home.sessionPath = [
+    "${config.home.homeDirectory}/Android/Sdk/platform-tools"
+    "${config.home.homeDirectory}/Android/Sdk/emulator"
+    "${config.home.homeDirectory}/Android/Sdk/cmdline-tools/latest/bin"
+  ];
+
+  home.shellAliases = {
+    adb-expo = "adb reverse tcp:8081 tcp:8081";
+    expo-usb = "adb reverse tcp:8081 tcp:8081 && npx expo start --localhost";
   };
 
   # ensure $HOME/node_modules/bin is on PATH at shell runtime
@@ -135,10 +150,6 @@ in {
   #
   #  /etc/profiles/per-user/liam/etc/profile.d/hm-session-vars.sh
   #
-  home.sessionVariables = {
-    # EDITOR = "emacs";
-  };
-
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;
 

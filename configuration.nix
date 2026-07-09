@@ -13,6 +13,8 @@ let
     system = pkgs.system;
     config.allowUnfree = true;
   };
+  claude-code = inputs.nix-claude-code.packages.${pkgs.system}.default;
+  codex = inputs.codex-nix.packages.${pkgs.system}.default;
 in
 {
   imports = [
@@ -244,12 +246,15 @@ in
   users.users.liam = {
     isNormalUser = true;
     description = "Liam";
-    extraGroups = ["networkmanager" "wheel" "docker" "librepods"];
+    extraGroups = ["networkmanager" "wheel" "docker" "librepods" "adbusers"];
     packages = with pkgs; [
       kdePackages.kate
       #  thunderbird
     ];
   };
+
+  # Android USB debugging for Expo Go / React Native development.
+  programs.adb.enable = true;
 
   security.wrappers.librepods = {
     source = lib.getExe' pkgs-unstable.librepods "librepods";
@@ -272,12 +277,16 @@ in
     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     wget
     vesktop
-    # pkgs-unstable.discord
+    pkgs-unstable.discord
     lazydocker
     lazygit
     git
     openssl
     gh
+    claude-code
+    pkgs-unstable.code-cursor-fhs # Cursor IDE (unfree; see nixpkgs code-cursor)
+    pkgs-unstable.cursor-cli
+    codex
     spotify
     neovim
     neovide
@@ -291,6 +300,8 @@ in
     bluez-tools
     pkgs-unstable.librepods
     nodejs
+    watchman
+    android-tools
     # redisinsight
     mako
     libnotify
@@ -359,7 +370,7 @@ in
   # services.openssh.enable = true;
 
   # Open ports in the firewall.
-  # networking.firewall.allowedTCPPorts = [ ... ];
+    networking.firewall.allowedTCPPorts = [ 8081 8000];
   # networking.firewall.allowedUDPPorts = [ ... ];
   # Or disable the firewall altogether.
   # networking.firewall.enable = false;

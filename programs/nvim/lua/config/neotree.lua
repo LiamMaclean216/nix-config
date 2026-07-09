@@ -14,6 +14,7 @@ neotree.setup({
 		follow_current_file = {
 			enabled = true,
 		},
+		bind_to_cwd = false,
 		use_libuv_file_watcher = true,
 	},
 })

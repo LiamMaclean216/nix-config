@@ -22,6 +22,12 @@
         vimAlias = true;
         preventJunkFiles = true;
 
+        options = {
+          foldlevel = 99;
+          foldlevelstart = 99;
+          foldenable = true;
+        };
+
         # Enable auto-completion with nvim-cmp
         autocomplete.nvim-cmp.enable = true;
 
