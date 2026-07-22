@@ -85,8 +85,9 @@ vim.keymap.set(all_modes, "<C-S-v>", function()
 	end
 end, opts)
 
--- Hook into lazygit terminal to add Ctrl+Q close keybinding
--- Lazygit is configured in plugins.nix, so we need to add the keybinding when it opens
+-- Hook into the Lazygit terminal to add Ctrl+Q close keybinding.
+-- File opening is configured with Lazygit's nvim-remote preset so `o` can
+-- close this terminal and open the file in this Neovim instance.
 vim.api.nvim_create_autocmd("TermOpen", {
 	pattern = "*lazygit*",
 	callback = function(args)

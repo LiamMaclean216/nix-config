@@ -160,6 +160,7 @@ in {
     ./programs/claude-code.nix
     ./programs/opencode.nix
     ./programs/gemini-cli.nix
+    ./programs/lazygit.nix
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
     ./desktop/hyprland.nix
