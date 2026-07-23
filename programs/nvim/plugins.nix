@@ -20,11 +20,6 @@
 
   programs.nvf.settings.vim.terminal.toggleterm = {
     enable = true;
-    lazygit = {
-      enable = true;
-      direction = "float";
-      mappings.open = "<C-g>";
-    };
   };
 
   programs.nvf.settings.vim.git.gitsigns = {

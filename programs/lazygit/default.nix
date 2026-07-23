@@ -2,12 +2,7 @@
 
 let
   lazygitWithWorktreePath = pkgs.lazygit.overrideAttrs (oldAttrs: {
-    postPatch = (oldAttrs.postPatch or "") + ''
-      substituteInPlace pkg/gui/controllers/helpers/worktree_helper.go \
-        --replace-fail \
-          'Title: self.c.Tr.NewWorktreePath,' \
-          'Title: self.c.Tr.NewWorktreePath, InitialContent: "../worktrees/",'
-    '';
+    patches = (oldAttrs.patches or [ ]) ++ [ ./worktree-path.patch ];
   });
 in
 {

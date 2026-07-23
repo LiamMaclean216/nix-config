@@ -8,6 +8,109 @@ local opts = { noremap = true, silent = true }
 -- Setup toggleterm terminals
 local Terminal = require("toggleterm.terminal").Terminal
 
+local function current_git_root()
+	local cwd_root = vim.fs.root(vim.fn.getcwd(), ".git")
+	if cwd_root then
+		return cwd_root
+	end
+
+	local buffer_path = vim.api.nvim_buf_get_name(0)
+	if buffer_path ~= "" then
+		local root = vim.fs.root(buffer_path, ".git")
+		if root then
+			return root
+		end
+	end
+
+	return vim.fn.getcwd()
+end
+
+local lazygit_new_dir_file = vim.fn.stdpath("cache") .. "/lazygit-new-dir-" .. vim.fn.getpid()
+vim.env.LAZYGIT_NEW_DIR_FILE = lazygit_new_dir_file
+local lazygit_terminals = {}
+local lazygit_dir_timer = nil
+local lazygit_origin = nil
+
+local function teleport_neovim(new_dir)
+	vim.cmd.cd(vim.fn.fnameescape(new_dir))
+
+	if lazygit_origin and vim.api.nvim_win_is_valid(lazygit_origin.win) then
+		local relative_path = lazygit_origin.relative_path
+		if relative_path then
+			local new_path = vim.fs.joinpath(new_dir, relative_path)
+			if vim.fn.filereadable(new_path) == 1 then
+				local buffer = vim.fn.bufadd(new_path)
+				vim.fn.bufload(buffer)
+				vim.api.nvim_win_set_buf(lazygit_origin.win, buffer)
+			end
+		end
+	end
+
+	local current_win = vim.api.nvim_get_current_win()
+	local ok, manager = pcall(require, "neo-tree.sources.manager")
+	if ok then
+		local state = manager.get_state("filesystem")
+		if state.winid and vim.api.nvim_win_is_valid(state.winid) then
+			vim.cmd("Neotree dir=" .. vim.fn.fnameescape(new_dir))
+			if vim.api.nvim_win_is_valid(current_win) then
+				vim.api.nvim_set_current_win(current_win)
+			end
+		end
+	end
+
+	if lazygit_origin then
+		lazygit_origin.root = new_dir
+	end
+end
+
+local function sync_lazygit_directory()
+	if vim.fn.filereadable(lazygit_new_dir_file) == 0 then
+		return
+	end
+
+	local new_dir = vim.trim(table.concat(vim.fn.readfile(lazygit_new_dir_file), ""))
+	vim.fn.delete(lazygit_new_dir_file)
+	if new_dir ~= "" and vim.fn.isdirectory(new_dir) == 1 then
+		teleport_neovim(new_dir)
+	end
+end
+
+local function stop_lazygit_dir_timer()
+	if lazygit_dir_timer then
+		lazygit_dir_timer:stop()
+		lazygit_dir_timer:close()
+		lazygit_dir_timer = nil
+	end
+end
+
+local function open_lazygit()
+	local root = current_git_root()
+	local buffer_path = vim.api.nvim_buf_get_name(0)
+	lazygit_origin = {
+		win = vim.api.nvim_get_current_win(),
+		root = root,
+		relative_path = buffer_path ~= "" and vim.fs.relpath(root, buffer_path) or nil,
+	}
+
+	local lazygit = lazygit_terminals[root]
+	if not lazygit then
+		lazygit = Terminal:new({
+			cmd = "lazygit",
+			dir = root,
+			direction = "float",
+			hidden = true,
+			on_open = function()
+				vim.cmd("startinsert!")
+			end,
+		})
+		lazygit_terminals[root] = lazygit
+	end
+
+	lazygit:toggle()
+end
+
+vim.keymap.set("n", "<C-g>", open_lazygit, { desc = "Lazygit" })
+
 -- Lazydocker
 local lazydocker = Terminal:new({
 	cmd = "lazydocker",
@@ -32,15 +135,15 @@ vim.keymap.set("n", "<C-v>", function()
 	lazydocker:toggle()
 end, { desc = "Lazydocker" })
 
--- Claude Code terminal
+-- Codex terminal for the current worktree
 vim.keymap.set("n", "<C-c>", function()
-	Funcs.OpenClaudeTerminal()
-end, { desc = "Claude Code" })
+	Funcs.OpenCodexTerminal(nil, current_git_root())
+end, { desc = "Codex" })
 
--- Claude Code terminal with current file reference
+-- Codex terminal for the current worktree with current file reference
 vim.keymap.set("n", "<C-S-c>", function()
-	Funcs.OpenClaudeTerminal(vim.fn.expand("%"))
-end, { desc = "Claude Code with current file" })
+	Funcs.OpenCodexTerminal(vim.fn.expand("%"), current_git_root())
+end, { desc = "Codex with current file" })
 
 -- Bottom terminal
 local bottom_terminal = Terminal:new({
@@ -88,11 +191,27 @@ end, opts)
 -- Hook into the Lazygit terminal to add Ctrl+Q close keybinding.
 -- File opening is configured with Lazygit's nvim-remote preset so `o` can
 -- close this terminal and open the file in this Neovim instance.
+local lazygit_group = vim.api.nvim_create_augroup("LazygitTerminal", { clear = true })
+
 vim.api.nvim_create_autocmd("TermOpen", {
+	group = lazygit_group,
 	pattern = "*lazygit*",
 	callback = function(args)
+		vim.fn.delete(lazygit_new_dir_file)
+		stop_lazygit_dir_timer()
+		lazygit_dir_timer = vim.uv.new_timer()
+		lazygit_dir_timer:start(100, 100, vim.schedule_wrap(sync_lazygit_directory))
 		vim.keymap.set("t", "<C-q>", function()
 			vim.cmd("close")
 		end, { buffer = args.buf, noremap = true, silent = true })
+	end,
+})
+
+vim.api.nvim_create_autocmd("TermClose", {
+	group = lazygit_group,
+	pattern = "*lazygit*",
+	callback = function()
+		stop_lazygit_dir_timer()
+		sync_lazygit_directory()
 	end,
 })

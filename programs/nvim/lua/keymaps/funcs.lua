@@ -153,16 +153,19 @@ end
 --   end
 -- end
 
--- Claude terminal instance
-local claude_terminal = nil
+-- Keep a separate Codex session for each worktree.
+local codex_terminals = {}
 
-function M.OpenClaudeTerminal(file_reference)
-	-- Initialize the claude terminal on first use
-	if not claude_terminal then
+function M.OpenCodexTerminal(file_reference, working_directory)
+	working_directory = vim.fs.normalize(working_directory or vim.fn.getcwd())
+	local codex_terminal = codex_terminals[working_directory]
+
+	-- Initialize this worktree's Codex terminal on first use.
+	if not codex_terminal then
 		local Terminal = require("toggleterm.terminal").Terminal
-		claude_terminal = Terminal:new({
+		codex_terminal = Terminal:new({
 			cmd = "codexvenv",
-			-- cmd = "cursorvenv",
+			dir = working_directory,
 			direction = "float",
 			float_opts = {
 				border = "curved",
@@ -182,10 +185,11 @@ function M.OpenClaudeTerminal(file_reference)
 				end, { buffer = term.bufnr, noremap = true, silent = true })
 			end,
 		})
+		codex_terminals[working_directory] = codex_terminal
 	end
 
 	-- Toggle the terminal
-	claude_terminal:toggle()
+	codex_terminal:toggle()
 
 	-- If file reference provided, insert it into the terminal
 	if file_reference then

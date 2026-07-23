@@ -1,0 +1,138 @@
+diff --git a/pkg/gui/controllers/helpers/worktree_helper.go b/pkg/gui/controllers/helpers/worktree_helper.go
+--- a/pkg/gui/controllers/helpers/worktree_helper.go
++++ b/pkg/gui/controllers/helpers/worktree_helper.go
+@@ -3,5 +3,6 @@ package helpers
+ import (
+ 	"errors"
++	"path/filepath"
+ 	"strings"
+ 
+ 	"github.com/jesseduffield/gocui"
+@@ -97,61 +98,66 @@ func (self *WorktreeHelper) NewWorktreeCheckout(base string, canCheckoutBase bool, detached bool, contextKey types.ContextKey) error {
+-func (self *WorktreeHelper) NewWorktreeCheckout(base string, canCheckoutBase bool, detached bool, contextKey types.ContextKey) error {
+-	opts := git_commands.NewWorktreeOpts{
+-		Base:   base,
+-		Detach: detached,
+-	}
+-
+-	f := func() error {
+-		return self.c.WithWaitingStatus(self.c.Tr.AddingWorktree, func(gocui.Task) error {
+-			self.c.LogAction(self.c.Tr.Actions.AddWorktree)
+-			if err := self.c.Git().Worktree.New(opts); err != nil {
+-				return err
+-			}
+-
+-			return self.reposHelper.DispatchSwitchTo(opts.Path, self.c.Tr.ErrWorktreeMovedOrRemoved, contextKey)
+-		})
+-	}
+-
+-	self.c.Prompt(types.PromptOpts{
+-		Title: self.c.Tr.NewWorktreePath,
+-		HandleConfirm: func(path string) error {
+-			opts.Path = path
+-
+-			if detached {
+-				return f()
+-			}
+-
+-			if canCheckoutBase {
+-				title := utils.ResolvePlaceholderString(self.c.Tr.NewBranchNameLeaveBlank, map[string]string{"default": base})
+-				// prompt for the new branch name where a blank means we just check out the branch
+-				self.c.Prompt(types.PromptOpts{
+-					Title: title,
+-					HandleConfirm: func(branchName string) error {
+-						opts.Branch = branchName
+-
+-						return f()
+-					},
+-				})
+-
+-				return nil
+-			}
+-
+-			// prompt for the new branch name where a blank means we just check out the branch
+-			self.c.Prompt(types.PromptOpts{
+-				Title: self.c.Tr.NewBranchName,
+-				HandleConfirm: func(branchName string) error {
+-					if branchName == "" {
+-						return errors.New(self.c.Tr.BranchNameCannotBeBlank)
+-					}
+-
+-					opts.Branch = branchName
+-
+-					return f()
+-				},
+-			})
+-
+-			return nil
+-		},
+-	})
+-
+-	return nil
+-}
++func defaultWorktreePath(name string) string {
++	safeName := strings.NewReplacer(
++		"/", "-",
++		"\\", "-",
++		":", "-",
++	).Replace(name)
++	return filepath.Join("..", "worktrees", safeName)
++}
++
++func (self *WorktreeHelper) NewWorktreeCheckout(base string, canCheckoutBase bool, detached bool, contextKey types.ContextKey) error {
++	opts := git_commands.NewWorktreeOpts{
++		Base:   base,
++		Detach: detached,
++		Path:   defaultWorktreePath(base),
++	}
++
++	f := func() error {
++		return self.c.WithWaitingStatus(self.c.Tr.AddingWorktree, func(gocui.Task) error {
++			self.c.LogAction(self.c.Tr.Actions.AddWorktree)
++			if err := self.c.Git().Worktree.New(opts); err != nil {
++				return err
++			}
++
++			return self.reposHelper.DispatchSwitchTo(opts.Path, self.c.Tr.ErrWorktreeMovedOrRemoved, contextKey)
++		})
++	}
++
++	if detached {
++		return f()
++	}
++
++	if canCheckoutBase {
++		title := utils.ResolvePlaceholderString(self.c.Tr.NewBranchNameLeaveBlank, map[string]string{"default": base})
++		// prompt for the new branch name where a blank means we just check out the branch
++		self.c.Prompt(types.PromptOpts{
++			Title: title,
++			HandleConfirm: func(branchName string) error {
++				opts.Branch = branchName
++				if branchName != "" {
++					opts.Path = defaultWorktreePath(branchName)
++				}
++
++				return f()
++			},
++		})
++
++		return nil
++	}
++
++	// prompt for the new branch name where a blank means we just check out the branch
++	self.c.Prompt(types.PromptOpts{
++		Title: self.c.Tr.NewBranchName,
++		HandleConfirm: func(branchName string) error {
++			if branchName == "" {
++				return errors.New(self.c.Tr.BranchNameCannotBeBlank)
++			}
++
++			opts.Branch = branchName
++			opts.Path = defaultWorktreePath(branchName)
++
++			return f()
++		},
++	})
++
++	return nil
++}
