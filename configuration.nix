@@ -434,14 +434,18 @@ in
   xdg.portal.enable = true;
   xdg.portal.extraPortals = with pkgs; [
     xdg-desktop-portal-hyprland
-    kdePackages.xdg-desktop-portal-kde
     xdg-desktop-portal-gtk
   ];
   xdg.portal.config = {
     common = {
-      default = ["hyprland" "kde" "gtk"];
-      "org.freedesktop.portal.ScreenCast" = ["hyprland"];
-      "org.freedesktop.portal.Notification" = ["gtk"];
+      default = ["gtk"];
+    };
+    hyprland = {
+      default = ["hyprland" "gtk"];
+      "org.freedesktop.impl.portal.ScreenCast" = ["hyprland"];
+      "org.freedesktop.impl.portal.Screenshot" = ["hyprland"];
+      "org.freedesktop.impl.portal.GlobalShortcuts" = ["hyprland"];
+      "org.freedesktop.impl.portal.Notification" = ["gtk"];
     };
   };
 

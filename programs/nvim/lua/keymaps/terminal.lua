@@ -135,15 +135,10 @@ vim.keymap.set("n", "<C-v>", function()
 	lazydocker:toggle()
 end, { desc = "Lazydocker" })
 
--- Codex terminal for the current worktree
-vim.keymap.set("n", "<C-c>", function()
-	Funcs.OpenCodexTerminal(nil, current_git_root())
-end, { desc = "Codex" })
-
--- Codex terminal for the current worktree with current file reference
-vim.keymap.set("n", "<C-S-c>", function()
-	Funcs.OpenCodexTerminal(vim.fn.expand("%"), current_git_root())
-end, { desc = "Codex with current file" })
+-- System yank: current line in normal/insert mode, selection in visual mode
+vim.keymap.set("n", "<C-S-c>", '"+yy', { desc = "Yank line to system clipboard" })
+vim.keymap.set("i", "<C-S-c>", '<C-o>"+yy', { desc = "Yank line to system clipboard" })
+vim.keymap.set("x", "<C-S-c>", '"+y', { desc = "Yank selection to system clipboard" })
 
 -- Bottom terminal
 local bottom_terminal = Terminal:new({

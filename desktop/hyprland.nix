@@ -46,6 +46,15 @@ let
   '';
 in
 {
+  # Chromium/Electron may request the selected source multiple times while
+  # preparing a screen share. Reuse the first permission instead of showing
+  # Hyprland's share picker for every request.
+  xdg.configFile."hypr/xdph.conf".text = ''
+    screencopy {
+        allow_token_by_default = true
+    }
+  '';
+
   # Pywal template for Hyprland colors
   home.file.".config/wal/templates/colors-hyprland.conf".text = ''
     $wallpaper = {wallpaper}
@@ -112,6 +121,8 @@ in
       "exec-once" = [
         "dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
         "systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE"
+        # Keep Blueman's pairing agent available so GUI pairing works reliably.
+        "systemctl --user start --no-block blueman-applet.service"
         "hyprpaper"
         "hyprctl setcursor Adwaita 24"
         # "/run/wrappers/bin/librepods"
@@ -171,7 +182,7 @@ in
           "layers, 1, 1.5, easeinoutsine, popin"
 
           # workspaces
-          "workspaces, 1, 3, fluent_decel, slidefadevert 30%"
+          "workspaces, 0"
           "specialWorkspace, 1, 2, fluent_decel, slidefade 10%"
         ];
       };

@@ -15,8 +15,31 @@ let
     source ~/.venv/bin/activate
     exec "${codex}/bin/codex" "$@"
   '';
-in {
-  home.packages = [ codexWrapper ];
 
-  home.file.".codex/packages/standalone/current".source = codexStandalone;
+  agentModePython = pkgs.python3.withPackages (ps: [ ps.websockets ]);
+  agentModeConnect = pkgs.writeShellScriptBin "agent-mode-connect" ''
+    exec ${agentModePython}/bin/python ${./nvim/agent-mode-connect.py} "$@"
+  '';
+
+  # Codex passes a JSON payload as the final argument whenever a turn ends.
+  # Agent Mode uses the token only to identify a CLI-created conversation.
+  # Runtime status comes from the shared app-server connection.
+  agentModeNotify = pkgs.writeShellScriptBin "agent-mode-notify" ''
+    set -eu
+    if [ "$#" -eq 3 ]; then
+      exec 9>>"$1.lock"
+      ${pkgs.util-linux}/bin/flock 9
+      printf '%s\t%s\n' "$2" "$3" >> "$1"
+    fi
+  '';
+in {
+  home.packages = [ codexWrapper agentModeNotify agentModeConnect ];
+
+  home.file.".codex/packages/standalone/current" = {
+    source = codexStandalone;
+    # Codex's standalone updater can replace this link at runtime. Restore the
+    # Nix-managed target on the next Home Manager activation without requiring
+    # a manual backup or deletion.
+    force = true;
+  };
 }

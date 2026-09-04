@@ -7,6 +7,7 @@ require("config.config.html")
 require("config.config.gitsigns")
 require("config.theme")
 require("config.projects")
+require("config.agent_mode").setup()
 
 vim.opt.number = true
 vim.opt.relativenumber = true
