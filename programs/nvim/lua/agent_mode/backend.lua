@@ -218,6 +218,7 @@ end
 function Backend:_request(method, params, callback)
 	if method ~= "initialize"
 		and method ~= "thread/list"
+		and method ~= "thread/search"
 		and method ~= "thread/read"
 		and method ~= "thread/archive"
 		and method ~= "thread/unarchive"
@@ -454,7 +455,7 @@ function Backend:_spawn()
 			version = "1.0.0",
 		},
 		capabilities = {
-			experimentalApi = false,
+			experimentalApi = true,
 			requestAttestation = false,
 		},
 	}, function(err)
@@ -496,7 +497,7 @@ function Backend:start(on_ready)
 	self:_spawn()
 end
 
-function Backend:list_threads(params, callback)
+local function fetch_threads(self, method, params, callback)
 	if type(params) == "function" and callback == nil then
 		callback = params
 		params = nil
@@ -570,24 +571,29 @@ function Backend:list_threads(params, callback)
 
 		local page_params = normalize(request_params)
 		page_params.cursor = normalize(cursor)
-		self:_request("thread/list", page_params, function(err, result)
+		self:_request(method, page_params, function(err, result)
 			if err then
 				finish(err)
 				return
 			end
 
 			if type(result) ~= "table" then
-				finish("Codex thread/list returned an invalid response")
+				finish("Codex " .. method .. " returned an invalid response")
 				return
 			end
 
 			local data = normalize(result.data)
 			if data ~= nil and type(data) ~= "table" then
-				finish("Codex thread/list returned invalid thread data")
+				finish("Codex " .. method .. " returned invalid thread data")
 				return
 			end
 
-			for _, thread in ipairs(data or {}) do
+			for _, item in ipairs(data or {}) do
+				local thread = method == "thread/search" and normalize(item.thread) or item
+				if type(thread) ~= "table" then
+					finish("Codex " .. method .. " returned invalid thread data")
+					return
+				end
 				if user_visible_thread(thread) and not seen_ids[thread.id] then
 					seen_ids[thread.id] = true
 					table.insert(threads, thread)
@@ -602,7 +608,7 @@ function Backend:list_threads(params, callback)
 
 			next_cursor = tostring(next_cursor)
 			if seen_cursors[next_cursor] then
-				finish("Codex thread/list returned a repeated pagination cursor")
+				finish("Codex " .. method .. " returned a repeated pagination cursor")
 				return
 			end
 			seen_cursors[next_cursor] = true
@@ -617,6 +623,14 @@ function Backend:list_threads(params, callback)
 		end
 		fetch_page(normalize(request_params.cursor))
 	end)
+end
+
+function Backend:list_threads(params, callback)
+	fetch_threads(self, "thread/list", params, callback)
+end
+
+function Backend:search_threads(params, callback)
+	fetch_threads(self, "thread/search", params, callback)
 end
 
 function Backend:read_thread(thread_id, callback, options)

@@ -233,6 +233,199 @@ test("both recents tabs exclude rows from another project even between refreshes
 	assert(state.selected_id == "local_chat")
 end)
 
+test("inline recents filtering updates both full lists and supports apply, clear, and cancel", function()
+	vim.cmd("tabnew")
+	state.sidebar_win = vim.api.nvim_get_current_win()
+	state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_win_set_buf(state.sidebar_win, state.sidebar_buf)
+	state.threads = { alpha = thread("alpha", "alpha chat"), beta = thread("beta", "beta chat") }
+	state.dismissed_threads = { old = thread("old", "alpha archived") }
+	state.backend = { search_threads = function(_, params, callback)
+		local matches = {}
+		for _, item in pairs(params.archived and state.dismissed_threads or state.threads) do
+			if item.preview:find(params.searchTerm, 1, true) then table.insert(matches, item) end
+		end
+		callback(nil, matches)
+	end }
+	internals.sort_threads()
+	internals.sidebar_mappings()
+	internals.render_sidebar()
+	local preload = mode.preload_selected
+	mode.preload_selected = function() end
+	local ok, err = pcall(function()
+		local function key(lhs, mapping_mode)
+			vim.fn.maparg(lhs, mapping_mode or "n", false, true).callback()
+		end
+		local function type_query(query)
+			local filter = assert(state.filter)
+			vim.api.nvim_buf_set_lines(filter.buf, 0, -1, false, { filter.prompt .. query })
+			vim.api.nvim_exec_autocmds("TextChangedI", { buffer = filter.buf })
+			if state.search then internals.search_recents(state.search) end
+		end
+		key("/")
+		local filter = assert(state.filter)
+		assert(vim.api.nvim_win_get_config(filter.win).relative == "", "input must be a regular inline split")
+		assert(vim.api.nvim_win_get_position(filter.win)[1] < vim.api.nvim_win_get_position(state.sidebar_win)[1])
+		type_query("alpha")
+		assert(#state.order == 1 and state.order[1].id == "alpha")
+		assert(#state.dismissed_order == 1)
+		type_query("missing")
+		assert(#state.order == 0 and #state.dismissed_order == 0)
+		assert(table.concat(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false), "\n")
+			:find("No matching active conversations", 1, true))
+		type_query("")
+		assert(#state.order == 2 and #state.dismissed_order == 1, "clearing input must restore all cached rows")
+		type_query("beta")
+		assert(#state.order == 1 and state.order[1].id == "beta" and #state.dismissed_order == 0)
+		assert(vim.api.nvim_get_current_win() == filter.win, "rendering must preserve input focus")
+		key("<CR>", "i")
+		assert(not state.filter and state.search_term == "beta" and #state.order == 1)
+		assert(not vim.api.nvim_buf_is_valid(filter.buf) and not vim.api.nvim_win_is_valid(filter.win))
+		assert(vim.api.nvim_get_current_win() == state.sidebar_win)
+		key("<Esc>")
+		assert(not state.search_term and #state.order == 2 and #state.dismissed_order == 1)
+		key("/")
+		type_query("alpha")
+		key("<Esc>", "i")
+		assert(not state.filter and not state.search_term and #state.order == 2)
+		local function feed(keys)
+			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(keys, true, false, true), "xt", false)
+		end
+		feed("/beta<CR>")
+		assert(not state.filter and state.search_term == "beta", "typing and Enter must apply the prompt text")
+		feed("<Esc>")
+		assert(not state.search_term and #state.order == 2)
+		feed("/alpha<Esc>")
+		assert(not state.filter and not state.search_term and #state.order == 2)
+	end)
+	mode.preload_selected = preload
+	vim.cmd("stopinsert")
+	if state.filter then internals.finish_recents_filter(false) end
+	vim.cmd("tabclose!")
+	vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+	assert(ok, err)
+end)
+
+test("full-text search debounces input and ignores stale or cancelled results", function()
+	state.threads = { first = thread("first", "unrelated title"), second = thread("second", "another title") }
+	local original_first = state.threads.first
+	local scheduled, requests = {}, {}
+	state.backend = { search_threads = function(_, params, callback)
+		table.insert(requests, { params = params, reply = callback })
+	end }
+	local defer = vim.defer_fn
+	vim.defer_fn = function(callback, delay)
+		assert(delay == 150)
+		table.insert(scheduled, callback)
+	end
+	local ok, err = pcall(function()
+		internals.set_recents_filter("bo")
+		internals.set_recents_filter("body text")
+		scheduled[1]()
+		assert(#requests == 0, "superseded keystrokes must not send searches")
+		scheduled[2]()
+		assert(#requests == 2 and requests[1].params.searchTerm == "body text")
+		assert(not requests[1].params.archived and requests[2].params.archived)
+		requests[1].reply(nil, { thread("first", "unrelated title"), thread("foreign", nil, { cwd = "/other" }) })
+		assert(#state.order == 1 and state.order[1].id == "first", "body matches must survive title mismatch")
+		assert(state.threads.first == original_first and not state.threads.foreign)
+		internals.set_recents_filter("different body text")
+		scheduled[3]()
+		requests[2].reply(nil, { thread("stale", "unrelated archived title") })
+		assert(not state.dismissed_threads.stale, "old replies must not populate the current search")
+		requests[3].reply(nil, { thread("second", "another title"), thread("discovered", "older title") })
+		assert(#state.order == 2 and state.threads.discovered, "search must include matches beyond the current cache")
+		internals.set_recents_filter("")
+		requests[4].reply(nil, { thread("cancelled") })
+		assert(not state.search and not state.search_term and #state.order == 3)
+		assert(not state.dismissed_threads.cancelled)
+		assert(state.threads.first == original_first, "search must preserve the complete identity/runtime cache")
+	end)
+	vim.defer_fn = defer
+	assert(ok, err)
+end)
+
+test("in-flight full list refreshes use the current inline filter", function()
+	local replies = {}
+	state.backend = { list_threads = function(_, params, callback)
+		assert(params.searchTerm == nil)
+		replies[params.archived and "dismissed" or "active"] = callback
+	end }
+	refresh()
+	internals.refresh_dismissed_threads()
+	state.search_term = "beta"
+	state.search = { matches = { beta = true, ["old-beta"] = true }, pending = {}, errors = {} }
+	replies.active(nil, { thread("alpha", "alpha"), thread("beta", "beta") })
+	replies.dismissed(nil, { thread("old-alpha", "alpha"), thread("old-beta", "beta") })
+	assert(#state.active_order == 1 and state.active_order[1].id == "beta")
+	assert(#state.dismissed_order == 1 and state.dismissed_order[1].id == "old-beta")
+	state.search_term = nil
+	internals.sort_threads()
+	assert(#state.active_order == 2 and #state.dismissed_order == 2)
+end)
+
+for _, immediate_refresh in ipairs({ true, false }) do
+	test("Enter restores and focuses the first active chat with " .. (immediate_refresh and "immediate" or "delayed") .. " refresh", function()
+		vim.cmd("tabnew")
+		state.sidebar_win = vim.api.nvim_get_current_win()
+		state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(state.sidebar_win, state.sidebar_buf)
+		vim.cmd("vsplit")
+		state.chat_win = vim.api.nvim_get_current_win()
+		vim.api.nvim_set_current_win(state.sidebar_win)
+		local recent = thread("recent", nil, { updatedAt = os.time() + 100 })
+		local old = thread("old", nil, { _dismissed = true })
+		state.threads.recent = recent
+		state.dismissed_threads.old = old
+		state.recents_tab = "dismissed"
+		state.selected_ids.active = "recent"
+		internals.sort_threads()
+		internals.sidebar_mappings()
+		internals.render_sidebar()
+		local restore_reply, refresh_reply
+		local function refreshed(callback)
+			callback(nil, { vim.deepcopy(recent), thread("old") })
+		end
+		state.backend = {
+			unarchive_thread = function(_, id, callback)
+				assert(id == "old")
+				restore_reply = callback
+			end,
+			list_threads = function(_, _, callback)
+				if immediate_refresh then refreshed(callback) else refresh_reply = callback end
+			end,
+		}
+		local preload, open = mode.preload_selected, mode.open_selected
+		local opened
+		mode.preload_selected = function() end
+		mode.open_selected = function(focus)
+			opened = state.selected_id
+			assert(focus, "Enter must request chat focus")
+			vim.api.nvim_set_current_win(state.chat_win)
+		end
+		local ok, err = pcall(function()
+			vim.fn.maparg("<CR>", "n", false, true).callback()
+			assert(not opened and state.recents_tab == "dismissed", "wait for successful restore")
+			restore_reply(nil, { thread = thread("old") })
+			local function check_restored()
+				assert(state.recents_tab == "active" and not state.dismissed_threads.old)
+				assert(state.active_order[1].id == "old", "restored chat must sort ahead of newer chats")
+				assert(state.selected_id == "old" and state.selected_ids.active == "old")
+				assert(opened == "old", "Enter must open the restored chat")
+				assert(vim.api.nvim_get_current_win() == state.chat_win)
+				assert(vim.api.nvim_win_get_cursor(state.sidebar_win)[1] == state.cursor_rows.old)
+			end
+			check_restored()
+			if refresh_reply then refreshed(refresh_reply) end
+			check_restored()
+		end)
+		mode.preload_selected, mode.open_selected = preload, open
+		vim.cmd("tabclose!")
+		vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+		assert(ok, err)
+	end)
+end
+
 test("a delayed restore from another project cannot select or open its chat", function()
 	local reply
 	state.backend = { unarchive_thread = function(_, _, callback) reply = callback end }
@@ -629,6 +822,7 @@ test("title changes update the existing row after switching away", function()
 	local session = pending("pending-1")
 	state.active_id = "another-chat"
 	state.search_term = "Generated title"
+	state.search = { matches = { root = true }, pending = {}, errors = {} }
 	listing({ thread("root", "hello", { name = "Generated title" }) })
 	refresh()
 	assert(session.id == "root" and #state.order == 1)
@@ -716,22 +910,28 @@ test("source filtering also excludes CLI helpers and subagents", function()
 	end
 end)
 
-test("pagination deduplicates canonical IDs", function()
-	local backend = Backend.new()
-	backend.start = function(_, callback) callback() end
-	backend._defer = function(_, callback, ...) callback(...) end
-	backend._request = function(_, method, params, callback)
-		assert(method == "thread/list")
-		if not params.cursor then
-			callback(nil, { data = { thread("root") }, nextCursor = "next" })
-		else
-			callback(nil, { data = { thread("root"), thread("helper", nil, { ephemeral = true }) } })
+for _, method in ipairs({ "list", "search" }) do
+	test(method .. " pagination deduplicates canonical IDs", function()
+		local backend = Backend.new()
+		backend.start = function(_, callback) callback() end
+		backend._defer = function(_, callback, ...) callback(...) end
+		backend._request = function(_, request_method, params, callback)
+			assert(request_method == "thread/" .. method)
+			assert(params.searchTerm == (method == "search" and "body text" or nil))
+			local function result(item)
+				return method == "search" and { thread = item, snippet = "body text" } or item
+			end
+			if not params.cursor then
+				callback(nil, { data = { result(thread("root")) }, nextCursor = "next" })
+			else
+				callback(nil, { data = { result(thread("root")), result(thread("helper", nil, { ephemeral = true })) } })
+			end
 		end
-	end
-	backend:list_threads(function(err, threads)
-		assert(not err and #threads == 1 and threads[1].id == "root")
+		backend[method .. "_threads"](backend, { searchTerm = method == "search" and "body text" or nil }, function(err, threads)
+			assert(not err and #threads == 1 and threads[1].id == "root")
+		end)
 	end)
-end)
+end
 
 
 test("list delivery preserves status events received during pagination or callback deferral", function()

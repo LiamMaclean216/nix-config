@@ -36,6 +36,8 @@ local state = {
 	dismiss_pending = {},
 	recents_tab = "active",
 	search_term = nil,
+	search = nil,
+	filter = nil,
 	selected_ids = {},
 	order = {},
 	selected_id = nil,
@@ -273,7 +275,7 @@ local function preview_lines(text, width)
 end
 
 local function thread_matches_search(thread)
-	return not state.search_term or thread_title(thread):find(state.search_term, 1, true) ~= nil
+	return not state.search_term or (state.search and state.search.matches[thread.id]) or false
 end
 
 local function backend_thread_time(thread)
@@ -444,6 +446,9 @@ local function render_sidebar()
 		vim.wo[state.sidebar_win].statusline = state.recents_tab == "active"
 			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [d] dismiss  [D] dismiss all  [q] back"
 			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [d] restore  [q] back"
+		if state.search_term and not state.filter then
+			vim.wo[state.sidebar_win].statusline = "  [Esc] clear filter" .. vim.wo[state.sidebar_win].statusline
+		end
 	end
 	local active_tab = string.format(" Active %d ", #state.active_order)
 	local dismissed_tab = " Dismissed "
@@ -454,7 +459,7 @@ local function render_sidebar()
 		dismissed = { 2 + #active_tab + #tab_separator, #tab_line },
 	}
 	local lines = { "", tab_line, "" }
-	if state.search_term then
+	if state.search_term and not state.filter then
 		table.insert(lines, truncate("  Filter: " .. state.search_term, width - 1))
 		table.insert(lines, "")
 	end
@@ -466,7 +471,11 @@ local function render_sidebar()
 
 	if #state.order == 0 then
 		local empty_message
-		if state.search_term then
+		if state.search and state.search.pending[state.recents_tab] then
+			empty_message = "  Searching conversations…"
+		elseif state.search and state.search.errors[state.recents_tab] then
+			empty_message = "  Search failed; press / to retry"
+		elseif state.search_term then
 			empty_message = state.recents_tab == "active"
 				and "  No matching active conversations"
 				or "  No matching dismissed conversations"
@@ -1737,7 +1746,6 @@ refresh_threads = function()
 
 	state.refreshing = true
 	local scope = project_key(state.project)
-	local search_term = state.search_term
 	local request_uses_state_db = state.history_repaired
 	local request_params = request_uses_state_db and { archived = false, useStateDbOnly = true } or { archived = false }
 	state.backend:list_threads(request_params, function(err, threads)
@@ -1749,8 +1757,7 @@ refresh_threads = function()
 			state.history_repaired = true
 		end
 		local scope_changed = scope ~= project_key(state.project)
-		local search_changed = search_term ~= state.search_term
-		if err or scope_changed or search_changed then
+		if err or scope_changed then
 			if err then
 				state.backend_ready = false
 				if err ~= state.last_backend_error then
@@ -1758,7 +1765,7 @@ refresh_threads = function()
 					notify("Recents backend: " .. tostring(err), vim.log.levels.WARN)
 				end
 			end
-			if scope_changed or search_changed then
+			if scope_changed then
 				vim.schedule(refresh_threads)
 			end
 			return
@@ -1858,7 +1865,6 @@ refresh_dismissed_threads = function()
 	state.dismissed_refreshing = true
 	render_sidebar()
 	local scope = project_key(state.project)
-	local search_term = state.search_term
 	local request_params = { archived = true }
 	if state.history_repaired then
 		request_params.useStateDbOnly = true
@@ -1868,7 +1874,7 @@ refresh_dismissed_threads = function()
 		if state.shutting_down then
 			return
 		end
-		if scope ~= project_key(state.project) or search_term ~= state.search_term then
+		if scope ~= project_key(state.project) then
 			vim.schedule(refresh_dismissed_threads)
 			return
 		end
@@ -2186,13 +2192,13 @@ select_sidebar_row = function(row)
 	M.preload_selected()
 end
 
-local function switch_recents_tab(tab)
+local function switch_recents_tab(tab, selected_id)
 	if tab ~= "active" and tab ~= "dismissed" then
 		return
 	end
 	state.selected_ids[state.recents_tab] = state.selected_id
 	state.recents_tab = tab
-	state.selected_id = nil
+	state.selected_id = selected_id
 	state.selected_ids[tab] = nil
 	sort_threads()
 	render_sidebar()
@@ -2334,17 +2340,17 @@ local function restore_thread(thread, on_restored)
 			return
 		end
 		move_to_active(restored)
-		refresh_threads()
 		if on_restored then
 			on_restored(restored)
 		end
+		refresh_threads()
 	end)
 end
 
 local function restore_and_open_thread(thread)
 	restore_thread(thread, function(restored)
-		state.selected_ids.active = restored.id
-		switch_recents_tab("active")
+		bump_thread(restored)
+		switch_recents_tab("active", restored.id)
 		if state.preview_timer then
 			state.preview_timer:stop()
 		end
@@ -2374,34 +2380,133 @@ local function dismiss_all()
 	open_new_chat()
 end
 
+local function search_recents(search)
+	if state.search ~= search or state.shutting_down then
+		return
+	end
+	local backend = state.backend
+	for _, tab in ipairs({ "active", "dismissed" }) do
+		local function receive(err, threads)
+			if state.search ~= search or state.shutting_down or backend ~= state.backend then
+				return
+			end
+			search.pending[tab] = nil
+			search.errors[tab] = err
+			if err then
+				notify("Recents search: " .. tostring(err), vim.log.levels.WARN)
+			else
+				local cache = tab == "active" and state.threads or state.dismissed_threads
+				local other = tab == "active" and state.dismissed_threads or state.threads
+				for _, thread in ipairs(threads) do
+					if Project.contains(state.project, thread.cwd) and not state.dismiss_pending[thread.id] then
+						search.matches[thread.id] = true
+						-- Search can discover older rows before the regular poll does.
+						-- Keep existing runtime status and local archive decisions intact.
+						if not cache[thread.id] and not other[thread.id] then
+							thread._dismissed = tab == "dismissed" or nil
+							cache[thread.id] = thread
+						end
+					end
+				end
+			end
+			sort_threads()
+			render_sidebar()
+		end
+		if backend then
+			backend:search_threads({ archived = tab == "dismissed", searchTerm = search.term }, receive)
+		else
+			receive("The recents backend is not ready")
+		end
+	end
+end
+
+local function set_recents_filter(input)
+	local term = vim.trim(input)
+	term = term ~= "" and term or nil
+	if term ~= state.search_term or (state.search and next(state.search.errors)) then
+		state.search_term = term
+		state.search = term and {
+			term = term, matches = {}, pending = { active = true, dismissed = true }, errors = {},
+		} or nil
+		if state.search then
+			local search = state.search
+			vim.defer_fn(function() search_recents(search) end, 150)
+		end
+	end
+	-- Clearing restores the complete caches immediately, without a backend round trip.
+	sort_threads()
+	render_sidebar()
+end
+
+local function finish_recents_filter(apply)
+	local filter = state.filter
+	local input = ""
+	if filter then
+		if apply and valid_buf(filter.buf) then
+			input = (vim.api.nvim_buf_get_lines(filter.buf, 0, 1, false)[1] or ""):sub(#filter.prompt + 1)
+		end
+		state.filter = nil
+		vim.cmd("stopinsert")
+		if valid_win(filter.win) then
+			vim.api.nvim_win_close(filter.win, true)
+		end
+		if valid_buf(filter.buf) then
+			vim.api.nvim_buf_delete(filter.buf, { force = true })
+		end
+	end
+	set_recents_filter(input)
+	if state.selected_id then
+		M.preload_selected()
+	elseif valid_win(state.chat_win) then
+		render_placeholder()
+	end
+end
+
 local function filter_recents()
-	vim.ui.input({
-		prompt = "Filter recents: ",
-		default = state.search_term or "",
-	}, function(input)
-		if input == nil then
-			return
-		end
-
-		local search_term = vim.trim(input)
-		if search_term == "" then
-			search_term = nil
-		end
-		if search_term == state.search_term then
-			return
-		end
-
-		state.search_term = search_term
-		sort_threads()
-		render_sidebar()
-		refresh_threads()
-		refresh_dismissed_threads()
-		if state.selected_id then
-			M.preload_selected()
-		elseif valid_win(state.chat_win) then
-			render_placeholder()
-		end
-	end)
+	if state.filter or not valid_win(state.sidebar_win) then
+		return
+	end
+	local filter = { buf = vim.api.nvim_create_buf(false, true), prompt = "  Filter: " }
+	state.filter = filter
+	set_scratch_options(filter.buf, "agentmodefilter")
+	vim.bo[filter.buf].modifiable = true
+	vim.bo[filter.buf].buftype = "prompt"
+	vim.fn.prompt_setprompt(filter.buf, filter.prompt)
+	vim.api.nvim_buf_set_lines(filter.buf, 0, -1, false, { filter.prompt .. (state.search_term or "") })
+	-- A regular split keeps the input in the sidebar layout as the list updates.
+	filter.win = vim.api.nvim_open_win(filter.buf, true, {
+		split = "above", win = state.sidebar_win, height = 1,
+	})
+	set_window_options(filter.win, true)
+	vim.wo[filter.win].winfixheight = true
+	vim.wo[filter.win].statusline = "  [Enter] apply  [Esc] cancel"
+	local options = { buffer = filter.buf, silent = true, nowait = true }
+	vim.keymap.set({ "i", "n" }, "<CR>", function() finish_recents_filter(true) end, options)
+	for _, key in ipairs({ "<Esc>", "<C-c>" }) do
+		vim.keymap.set({ "i", "n" }, key, function() finish_recents_filter(false) end, options)
+	end
+	vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
+		buffer = filter.buf,
+		callback = function()
+			if state.filter == filter then
+				local line = vim.api.nvim_buf_get_lines(filter.buf, 0, 1, false)[1] or ""
+				set_recents_filter(line:sub(#filter.prompt + 1))
+			end
+		end,
+	})
+	vim.api.nvim_create_autocmd("BufLeave", {
+		buffer = filter.buf,
+		callback = function()
+			vim.schedule(function()
+				if state.filter == filter then
+					finish_recents_filter(false)
+				end
+			end)
+		end,
+	})
+	render_sidebar()
+	vim.api.nvim_win_set_cursor(filter.win, { 1, #filter.prompt + #(state.search_term or "") })
+	vim.cmd("startinsert!")
 end
 
 local function cycle_worktree()
@@ -2439,6 +2544,11 @@ local function sidebar_mappings()
 	vim.keymap.set("n", "/", filter_recents, vim.tbl_extend("force", options, {
 		desc = "Filter Agent Mode recents",
 	}))
+	vim.keymap.set("n", "<Esc>", function()
+		if state.search_term then
+			finish_recents_filter(false)
+		end
+	end, vim.tbl_extend("force", options, { desc = "Clear Agent Mode recents filter" }))
 	vim.keymap.set("n", "<Tab>", toggle_recents_tab, vim.tbl_extend("force", options, {
 		desc = "Switch Agent Mode recents tab",
 	}))
@@ -2575,6 +2685,7 @@ local function set_project(directory, reset_target)
 		state.selected_ids = {}
 		state.recents_tab = "active"
 		state.search_term = nil
+		state.search = nil
 		state.order = {}
 		state.selected_id = nil
 		state.active_id = nil
