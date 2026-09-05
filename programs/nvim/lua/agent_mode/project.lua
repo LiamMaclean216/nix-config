@@ -107,6 +107,20 @@ local function parse_worktrees(output, current_worktree)
 	return worktrees
 end
 
+local function default_branch(cwd, worktrees)
+	local remote_head = run({ "git", "-C", cwd, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD" })
+	if remote_head then
+		return remote_head:match("^refs/remotes/origin/(.+)$")
+	end
+	-- Repositories without a remote HEAD commonly use main or master.
+	for _, branch in ipairs({ "main", "master" }) do
+		if run({ "git", "-C", cwd, "show-ref", "--verify", "--quiet", "refs/heads/" .. branch }) then
+			return branch
+		end
+	end
+	return worktrees[1] and worktrees[1].branch or nil
+end
+
 function M.discover(start_dir)
 	local launch_cwd = normalize_path(start_dir or vim.fn.getcwd())
 	if vim.fn.filereadable(launch_cwd) == 1 then
@@ -144,6 +158,7 @@ function M.discover(start_dir)
 		current_worktree = current_worktree,
 		common_dir = common_dir,
 		repo_name = basename(worktrees[1].path),
+		default_branch = default_branch(current_worktree, worktrees),
 		worktrees = worktrees,
 	}
 end

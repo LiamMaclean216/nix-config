@@ -221,6 +221,7 @@ function Backend:_request(method, params, callback)
 		and method ~= "thread/read"
 		and method ~= "thread/archive"
 		and method ~= "thread/unarchive"
+		and method ~= "turn/interrupt"
 	then
 		self:_defer(callback, "Unsupported metadata request: " .. tostring(method))
 		return
@@ -531,14 +532,6 @@ function Backend:list_threads(params, callback)
 			return
 		end
 
-		-- A status event can arrive while pagination or deferred callbacks are in
-		-- flight. A stale snapshot must never overwrite that newer observation.
-		for _, thread in ipairs(threads) do
-			local live = self._statuses[thread.id]
-			if live and live.revision > snapshot_revision then
-				thread.status = normalize(live.status)
-			end
-		end
 		table.sort(threads, function(left, right)
 			local left_timestamp = thread_timestamp(left)
 			local right_timestamp = thread_timestamp(right)
@@ -554,7 +547,19 @@ function Backend:list_threads(params, callback)
 
 			return tostring(left.id or "") < tostring(right.id or "")
 		end)
-		self:_defer(callback, nil, threads)
+		self:_defer(function()
+			-- Reconcile at delivery: status events can arrive even after the last
+			-- page is processed while this callback is waiting on the scheduler.
+			for _, thread in ipairs(threads) do
+				local live = self._statuses[thread.id]
+				if live and live.revision > snapshot_revision then
+					thread.status = normalize(live.status)
+				end
+			end
+			if type(callback) == "function" then
+				callback(nil, threads)
+			end
+		end)
 	end
 
 	local fetch_page
@@ -629,6 +634,46 @@ function Backend:read_thread(thread_id, callback, options)
 			threadId = thread_id,
 			includeTurns = not (options and options.summary_only),
 		}, callback)
+	end)
+end
+
+local function active_turn_id(result)
+	local thread = result and normalize(result.thread)
+	if type(thread) ~= "table" or type(thread.turns) ~= "table" then
+		return nil, "Codex thread/read returned invalid turn data"
+	end
+	for _, turn in ipairs(thread.turns) do
+		if turn.status == "inProgress" then
+			return turn.id
+		end
+	end
+end
+
+function Backend:interrupt_thread(thread_id, callback)
+	-- Read live turns: the recents snapshot can lag behind a turn starting or
+	-- finishing, and disconnecting a remote terminal does not stop daemon work.
+	self:read_thread(thread_id, function(err, result)
+		if err then
+			callback(err)
+			return
+		end
+		local turn_id, read_err = active_turn_id(result)
+		if read_err or not turn_id then
+			callback(read_err)
+			return
+		end
+		self:_request("turn/interrupt", { threadId = thread_id, turnId = turn_id }, function(interrupt_err)
+			if not interrupt_err then
+				callback(nil)
+				return
+			end
+			-- Completion can win the race with interruption. Only proceed when a
+			-- fresh read confirms that no turn is still running.
+			self:read_thread(thread_id, function(check_err, latest)
+				local active_id, latest_err = active_turn_id(latest)
+				callback((check_err or latest_err or active_id) and interrupt_err or nil)
+			end)
+		end)
 	end)
 end
 

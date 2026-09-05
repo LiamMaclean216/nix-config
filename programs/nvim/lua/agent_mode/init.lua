@@ -15,6 +15,8 @@ local defaults = {
 	history_write_delay = 100,
 	refresh_interval = 2500,
 	preview_delay = 150,
+	preview_loading_timeout = 5000,
+	preload_concurrency = 2,
 	sidebar_width = 40,
 	connector = "agent-mode-connect",
 }
@@ -41,6 +43,7 @@ local state = {
 	sessions = {},
 	session_tokens = {},
 	session_sequence = 0,
+	preload_scheduled = false,
 	pending_sequence = 0,
 	activity_clock = 0,
 	new_worktree = false,
@@ -59,6 +62,7 @@ local state = {
 	working_animation_timer = nil,
 	working_animation_frame = 0,
 	mousemoveevent_restore = nil,
+	guicursor_restore = nil,
 	notify_timer = nil,
 	notify_path = nil,
 	notify_offset = 0,
@@ -69,6 +73,8 @@ local state = {
 }
 
 local namespace = vim.api.nvim_create_namespace("AgentMode")
+local working_namespace = vim.api.nvim_create_namespace("AgentModeWorking")
+local working_labels = {}
 local codex_backtab = "\27[Z"
 local select_sidebar_row
 
@@ -119,6 +125,29 @@ local function restore_mouse_hover()
 	state.mousemoveevent_restore = nil
 end
 
+local function restore_sidebar_cursor()
+	if state.guicursor_restore ~= nil then
+		vim.o.guicursor = state.guicursor_restore
+		state.guicursor_restore = nil
+	end
+end
+
+local function hide_sidebar_cursor()
+	if vim.api.nvim_get_current_win() ~= state.sidebar_win
+		or vim.api.nvim_get_current_buf() ~= state.sidebar_buf
+	then
+		return
+	end
+	if state.guicursor_restore == nil then
+		state.guicursor_restore = vim.o.guicursor
+	end
+	-- A transparent cursor highlight hides the native cursor in the TUI too.
+	-- Leave command-line and insert cursors available for prompts.
+	vim.api.nvim_set_hl(0, "AgentModeHiddenCursor", { blend = 100 })
+	local prefix = state.guicursor_restore ~= "" and state.guicursor_restore .. "," or ""
+	vim.o.guicursor = prefix .. "n-v-ve-o:AgentModeHiddenCursor/AgentModeHiddenCursor"
+end
+
 local function handle_sidebar_hover()
 	local mouse = vim.fn.getmousepos()
 	if mouse.winid == state.sidebar_win and select_sidebar_row then
@@ -158,15 +187,13 @@ local function set_window_options(win, sidebar)
 	vim.wo[win].foldcolumn = "0"
 	vim.wo[win].spell = false
 	vim.wo[win].wrap = false
-	vim.wo[win].cursorline = sidebar
+	-- The sidebar highlights whole conversation cards, including wrapped titles.
+	vim.wo[win].cursorline = false
 	vim.wo[win].winfixwidth = sidebar
 	vim.wo[win].winfixheight = false
 	vim.wo[win].list = false
 	vim.wo[win].colorcolumn = ""
 	if sidebar then
-		-- The sidebar draws its own triangular selection cursor. Keep Neovim's
-		-- required window cursor visually merged into that selected cell.
-		vim.wo[win].winhighlight = "Cursor:AgentModeSelected"
 		vim.wo[win].statusline = "  [/] filter  [[]/[]] tab  [Tab] toggle  [j/k] move  [Enter/i] open  [d] toggle  [D] dismiss all  [q] back"
 	else
 		vim.wo[win].statusline = "  [Esc] recents  [Alt-Esc] send Escape to Codex  [Ctrl-C] new  [F10] recents"
@@ -225,6 +252,26 @@ local function thread_title(thread)
 	return title:gsub("%s+", " ")
 end
 
+local function preview_lines(text, width)
+	if vim.fn.strdisplaywidth(text) <= width then
+		return { text, "" }
+	end
+	local first, split = "", 0
+	for index = 0, vim.fn.strchars(text) - 1 do
+		local character = vim.fn.strcharpart(text, index, 1)
+		if vim.fn.strdisplaywidth(first .. character) > width then
+			break
+		end
+		first = first .. character
+		split = #first
+	end
+	local word_break = first:match("^.*()%s")
+	if word_break and text:sub(split + 1, split + 1) ~= " " then
+		split = word_break
+	end
+	return { vim.trim(text:sub(1, split)), truncate(vim.trim(text:sub(split + 1)), width) }
+end
+
 local function thread_matches_search(thread)
 	return not state.search_term or thread_title(thread):find(state.search_term, 1, true) ~= nil
 end
@@ -243,7 +290,8 @@ local function status_name(thread)
 	if thread._dismissed then
 		return "saved"
 	end
-	if thread._local_status then
+	-- Preview loading should not hide runtime status or the new/resumed default.
+	if thread._local_status and thread._local_status ~= "loading" then
 		return thread._local_status
 	end
 
@@ -263,13 +311,13 @@ local function status_name(thread)
 	elseif kind == "systemError" then
 		return "error"
 	end
-	return "saved"
+	local session = state.sessions[thread.id]
+	-- A new chat already has its first prompt queued; resumed chats start ready.
+	return session and session.default_status or "ready"
 end
 
 local status_icons = {
-	working = "●",
 	loading = "◌",
-	ready = "✓",
 	input = "?",
 	approval = "!",
 	active = "↗",
@@ -290,12 +338,62 @@ local status_highlights = {
 	saved = "Comment",
 }
 
-local function status_label(status)
-	if status ~= "working" then
-		return status:upper()
+local function relative_date(timestamp, now)
+	if timestamp <= 0 then
+		return "No date"
 	end
-	local dots = string.rep(".", state.working_animation_frame % 3)
-	return "WORKING" .. dots
+	-- Count local calendar days, including year boundaries and daylight saving.
+	local function calendar_day(time)
+		local date = os.date("*t", time)
+		local year = date.year - 1
+		return 365 * year + math.floor(year / 4) - math.floor(year / 100)
+			+ math.floor(year / 400) + date.yday
+	end
+	local days = calendar_day(now or os.time()) - calendar_day(timestamp)
+	if days == 0 then
+		return "Today"
+	elseif days == 1 then
+		return "Yesterday"
+	elseif days > 1 then
+		return string.format("%d days ago", days)
+	end
+	return os.date("%y-%m-%d", timestamp)
+end
+
+local function setup_working_highlights()
+	local dim = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg or 0x808080
+	local bright = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg
+		or (vim.o.background == "light" and 0x202020 or 0xffffff)
+	for level = 0, 7 do
+		local color = 0
+		for _, shift in ipairs({ 16, 8, 0 }) do
+			local low = math.floor(dim / 2 ^ shift) % 256
+			local high = math.floor(bright / 2 ^ shift) % 256
+			color = color + math.floor(low + (high - low) * level / 7 + 0.5) * 2 ^ shift
+		end
+		vim.api.nvim_set_hl(0, "AgentModeWorking" .. level, {
+			fg = color, bold = level >= 6,
+			ctermfg = level >= 4 and (vim.o.background == "light" and 0 or 15) or 8,
+		})
+	end
+end
+
+local function render_working_animation()
+	if not valid_buf(state.sidebar_buf) then
+		return
+	end
+	vim.api.nvim_buf_clear_namespace(state.sidebar_buf, working_namespace, 0, -1)
+	for _, label in ipairs(working_labels) do
+		for index = 0, 6 do
+			local phase = state.working_animation_frame / 24 - index / 12
+			local intensity = ((1 + math.cos(2 * math.pi * phase)) / 2) ^ 2
+			vim.api.nvim_buf_set_extmark(state.sidebar_buf, working_namespace, label.row, label.col + index, {
+				end_col = label.col + index + 1,
+				hl_group = "AgentModeWorking" .. math.floor(intensity * 7 + 0.5),
+				hl_mode = "combine", priority = 200,
+			})
+		end
+	end
 end
 
 local function selected_index()
@@ -361,11 +459,12 @@ local function render_sidebar()
 		table.insert(lines, "")
 	end
 	local decorations = {}
+	working_labels = {}
+	local now = os.time()
 	local cursor_rows = {}
 	local row_threads = {}
 
 	if #state.order == 0 then
-		local loading = state.recents_tab == "active" and state.refreshing or state.dismissed_refreshing
 		local empty_message
 		if state.search_term then
 			empty_message = state.recents_tab == "active"
@@ -373,40 +472,56 @@ local function render_sidebar()
 				or "  No matching dismissed conversations"
 		else
 			empty_message = state.recents_tab == "active"
-				and "  No active conversations in this project"
-				or "  No dismissed conversations in this project"
+				and "  No active conversations"
+				or "  No dismissed conversations"
 		end
-		table.insert(lines, loading and "  Loading conversations…" or empty_message)
+		table.insert(lines, empty_message)
 	else
 		for _, thread in ipairs(state.order) do
 			local status = status_name(thread)
 			local updated = thread_time(thread)
-			local date = updated > 0 and os.date("%y-%m-%d %H:%M", updated) or "No date"
-			local unread = thread._unread and "●" or " "
-			local selected = not state.composer and thread.id == state.selected_id and "▶" or " "
+			local date = relative_date(updated, now)
+			local unread = thread._unread and "● " or "  "
 			local worktree = state.project and Project.worktree_for(state.project, thread.cwd or "") or nil
-			local worktree_name = worktree and (worktree.label or vim.fs.basename(worktree.path)) or "current directory"
-			local worktree_path = worktree and vim.fn.fnamemodify(worktree.path, ":~") or (thread.cwd or "")
 			local first_row = #lines + 1
 
-			if status == "saved" then
-				table.insert(lines, string.format(" %s   %s", unread, date))
-			else
-				table.insert(lines, string.format(" %s %s %-9s %s", unread, status_icons[status] or "·", status_label(status), date))
+			local preview = preview_lines(thread_title(thread), math.max(1, width - 4))
+			table.insert(lines, unread .. preview[1])
+			if preview[2] ~= "" then
+				table.insert(lines, "  " .. preview[2])
 			end
-			table.insert(lines, truncate(string.format(" %s %s", selected, thread_title(thread)), width - 1))
-			table.insert(lines, truncate(string.format("    %s · %s", worktree_name, worktree_path), width - 1))
+			local title_last = #lines
+			local label = status:sub(1, 1):upper() .. status:sub(2)
+			local icon = status_icons[status]
+			local status_text = (icon and icon .. " " or "") .. label
+			local metadata = (status == "saved" or status == "loading") and date or status_text .. " · " .. date
+			table.insert(lines, truncate("  " .. metadata, width - 2))
+			local metadata_row = #lines
+			if status == "working" and width >= 11 then
+				table.insert(working_labels, { row = metadata_row - 1, col = 2 })
+			end
+			if worktree and state.project.common_dir
+				and (not worktree.branch or worktree.branch ~= state.project.default_branch)
+			then
+				local label = worktree.label or vim.fs.basename(worktree.path)
+				table.insert(lines, truncate("  ↳ " .. label, width - 2))
+			end
+			local last_row = #lines
 			table.insert(lines, "")
 
-			cursor_rows[thread.id] = first_row + 1
-			for row = first_row, first_row + 2 do
+			cursor_rows[thread.id] = first_row
+			for row = first_row, last_row do
 				row_threads[row] = thread.id
 			end
 			table.insert(decorations, {
 				first = first_row,
-				last = first_row + 2,
+				last = last_row,
+				title_last = title_last,
+				metadata_row = metadata_row,
+				status_end = math.min(#lines[metadata_row], 2 + #status_text),
 				status = status,
-				selected = thread.id == state.selected_id,
+				selected = thread.id == state.selected_id
+					and not (state.composer and valid_win(state.composer.win)),
 			})
 		end
 	end
@@ -436,21 +551,25 @@ local function render_sidebar()
 	)
 
 	for _, decoration in ipairs(decorations) do
-		vim.api.nvim_buf_add_highlight(
-			state.sidebar_buf,
-			namespace,
-			status_highlights[decoration.status] or "Comment",
-			decoration.first - 1,
-			0,
-			-1
-		)
-		if decoration.selected then
-			for row = decoration.first, decoration.last do
-				vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, "AgentModeSelected", row - 1, 0, -1)
+		for row = decoration.first, decoration.last do
+			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace,
+				row <= decoration.title_last and "AgentModeTitle" or "Comment", row - 1, 0, -1)
+			if decoration.selected then
+				-- A line highlight also fills the cells past EOL, keeping every
+				-- line of the hovered conversation the same rectangular width.
+				vim.api.nvim_buf_set_extmark(state.sidebar_buf, namespace, row - 1, 0, {
+					line_hl_group = "AgentModeSelected", priority = 90,
+				})
 			end
+		end
+		if decoration.status ~= "saved" and decoration.status ~= "loading" then
+			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace,
+				status_highlights[decoration.status] or "Comment",
+				decoration.metadata_row - 1, 2, decoration.status_end)
 		end
 	end
 
+	render_working_animation()
 	if valid_win(state.sidebar_win) and state.selected_id and cursor_rows[state.selected_id] then
 		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { cursor_rows[state.selected_id], 1 })
 	end
@@ -718,7 +837,7 @@ local function render_composer(message)
 		input_height = input_height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / input_width))
 	end
 	input_height = math.max(3, math.min(10, input_height))
-	local content_height = #agent_mode_banner + input_height + (composer.plan_mode and 11 or 10)
+	local content_height = #agent_mode_banner + input_height + (composer.plan_mode and 8 or 7) + (message and 1 or 0)
 	local padding = math.max(1, math.floor((height - content_height) / 2))
 	local lines = {}
 	for _ = 1, padding do
@@ -726,12 +845,13 @@ local function render_composer(message)
 	end
 	local banner_first, banner_last = append_centered_banner(lines, width)
 	table.insert(lines, "")
-	local title_row = #lines + 1
-	table.insert(lines, centered_text("NEW AGENT", width))
-	local subtitle_row = #lines + 1
-	table.insert(lines, centered_text(message or "What should Codex work on?", width))
+	local message_row = nil
+	if message then
+		message_row = #lines + 1
+		table.insert(lines, centered_text(message, width))
+	end
 	local target_row = #lines + 1
-	table.insert(lines, centered_text("Worktree: " .. target_summary(), width))
+	table.insert(lines, centered_text("Worktree: " .. target_summary() .. "  ·  Ctrl-T fresh worktree", width))
 	local mode_row = nil
 	if composer.plan_mode then
 		mode_row = #lines + 1
@@ -742,8 +862,6 @@ local function render_composer(message)
 	for _ = 1, input_height + 2 do
 		table.insert(lines, "")
 	end
-	local help_row = #lines + 1
-	table.insert(lines, centered_text("Enter send  ·  Ctrl-C clear  ·  Ctrl-T fresh worktree  ·  Esc recents", width))
 
 	vim.bo[composer.background_buf].modifiable = true
 	vim.api.nvim_buf_set_lines(composer.background_buf, 0, -1, false, lines)
@@ -752,13 +870,13 @@ local function render_composer(message)
 	for row = banner_first, banner_last do
 		vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "DiagnosticInfo", row - 1, 0, -1)
 	end
-	vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "Title", title_row - 1, 0, -1)
-	vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "DiagnosticInfo", subtitle_row - 1, 0, -1)
+	if message_row then
+		vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "DiagnosticInfo", message_row - 1, 0, -1)
+	end
 	vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "Comment", target_row - 1, 0, -1)
 	if mode_row then
 		vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "DiagnosticWarn", mode_row - 1, 0, -1)
 	end
-	vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "Comment", help_row - 1, 0, -1)
 	vim.bo[composer.buf].modifiable = not composer.busy
 
 	local float_config = {
@@ -797,6 +915,16 @@ focus_recents = function()
 	end
 	vim.cmd("stopinsert")
 	vim.api.nvim_set_current_win(state.sidebar_win)
+	if state.composer and valid_win(state.chat_win)
+		and vim.api.nvim_win_get_buf(state.chat_win) == state.composer.background_buf
+		and state.order[1]
+	then
+		state.selected_id = state.order[1].id
+		if state.preview_timer then
+			state.preview_timer:stop()
+		end
+		M.open_selected(false)
+	end
 	local row = state.selected_id and state.cursor_rows and state.cursor_rows[state.selected_id]
 	if row then
 		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { row, 1 })
@@ -894,6 +1022,14 @@ local function finish_initial_load(session)
 		return
 	end
 	session.initial_load_complete = true
+	if session.frontend_status == "loading" then
+		session.frontend_status = nil
+		local thread = thread_for_session(session)
+		if thread and thread._local_status == "loading" then
+			thread._local_status = nil
+		end
+		render_sidebar()
+	end
 	show_terminal_session(session, session.reveal_focus)
 end
 
@@ -942,6 +1078,13 @@ local function terminal_ui_status(session)
 end
 
 local function attach_terminal_activity(session)
+	local function check_initial_load()
+		if not state.shutting_down and state.session_tokens[session.notify_token] == session
+			and not session.initial_load_complete and terminal_ui_status(session)
+		then
+			finish_initial_load(session)
+		end
+	end
 	vim.api.nvim_buf_attach(session.buf, false, {
 		on_lines = function()
 			if session.initial_load_complete or session.activity_scheduled then
@@ -950,12 +1093,20 @@ local function attach_terminal_activity(session)
 			session.activity_scheduled = true
 			vim.schedule(function()
 				session.activity_scheduled = false
-				if terminal_ui_status(session) then
-					finish_initial_load(session)
-				end
+				check_initial_load()
 			end)
 		end,
 	})
+	-- Output can arrive before the listener is attached. Also reveal unfamiliar
+	-- startup screens after a bounded wait so their prompts remain accessible.
+	vim.schedule(check_initial_load)
+	vim.defer_fn(function()
+		if not state.shutting_down and state.session_tokens[session.notify_token] == session
+			and valid_buf(session.buf) and not session.active_elsewhere
+		then
+			finish_initial_load(session)
+		end
+	end, state.opts.preview_loading_timeout)
 end
 
 local function send_escape_to_codex(session)
@@ -1038,7 +1189,10 @@ local function configure_terminal_buffer(session)
 			if state.prompt_history then
 				state.prompt_history:record_final(prompt)
 			end
-			if not session.id then
+			-- The saved preview identifies the first prompt. A follow-up can arrive
+			-- before metadata or the notify hook binds this terminal to its ID.
+			-- Keep that evidence so the saved row replaces the temporary one.
+			if not session.id and not session.initial_prompt then
 				session.initial_prompt = prompt
 			end
 		end
@@ -1068,9 +1222,11 @@ local function notifier_config_argument(token)
 	return string.format("notify=[%q,%q,%q]", "agent-mode-notify", state.notify_path, token)
 end
 
-local function terminal_command(resume_id, notify_token)
+local function terminal_command(resume_id, notify_token, cwd)
 	local command = type(state.opts.command) == "table" and vim.deepcopy(state.opts.command) or { state.opts.command }
-	vim.list_extend(command, { "--remote", "unix://" })
+	-- Explicit remote connections use the daemon's cwd unless --cd is sent.
+	-- jobstart's cwd only changes the local terminal process's directory.
+	vim.list_extend(command, { "--remote", "unix://", "--cd", cwd })
 	local notifier = notifier_config_argument(notify_token)
 	if notifier then
 		vim.list_extend(command, { "-c", notifier })
@@ -1148,7 +1304,7 @@ local function create_terminal(resume_id, cwd, key, thread_id, fresh)
 	end
 	state.session_sequence = state.session_sequence + 1
 	local notify_token = string.format("%s-%d", vim.fn.getpid(), state.session_sequence)
-	local command = terminal_command(resume_id, notify_token)
+	local command = terminal_command(resume_id, notify_token, cwd)
 	local buf = vim.api.nvim_create_buf(false, true)
 	pcall(vim.api.nvim_buf_set_name, buf, "agent://chat/" .. key)
 	local previous_buf = valid_win(state.chat_win) and vim.api.nvim_win_get_buf(state.chat_win) or nil
@@ -1164,6 +1320,7 @@ local function create_terminal(resume_id, cwd, key, thread_id, fresh)
 		cwd = cwd,
 		started_at = os.time(),
 		frontend_status = "loading",
+		default_status = fresh and "working" or "ready",
 		initial_load_complete = false,
 		reveal_focus = false,
 		notify_token = notify_token,
@@ -1234,6 +1391,61 @@ local function create_terminal(resume_id, cwd, key, thread_id, fresh)
 	return session
 end
 
+local function preload_active_threads()
+	local limit = state.opts.preload_concurrency or 0
+	if state.shutting_down or not state.backend_ready or not valid_win(state.chat_win)
+		or state.recents_tab ~= "active" or limit <= 0
+	then
+		return
+	end
+	local loading = 0
+	for _, session in pairs(state.sessions) do
+		-- A new CLI must acquire its canonical identity before background resumes
+		-- can occupy IDs that identity discovery might otherwise assign to it.
+		if not session.id or session.pending_thread_switch then
+			return
+		end
+		if not session.initial_load_complete and terminal_running(session) then
+			loading = loading + 1
+		end
+	end
+	local candidates = {}
+	local selected = state.threads[state.selected_id]
+	if selected then
+		table.insert(candidates, selected)
+	end
+	for _, thread in ipairs(state.active_order) do
+		if thread ~= selected then
+			table.insert(candidates, thread)
+		end
+	end
+	local remaining = false
+	for _, thread in ipairs(candidates) do
+		local status = normalize(thread.status)
+		local kind = type(status) == "table" and status.type or nil
+		-- Loaded threads may have a writer in another client. Leave them alone;
+		-- selecting one explicitly still uses the usual read-only fallback.
+		if not state.sessions[thread.id] and not thread._dismissed and not state.dismiss_pending[thread.id]
+			and (not kind or kind == "notLoaded") and thread.cwd and vim.fn.isdirectory(thread.cwd) == 1
+		then
+			if loading < limit then
+				create_terminal(thread.id, thread.cwd, thread.id, thread.id)
+				loading = loading + 1
+			else
+				remaining = true
+				break
+			end
+		end
+	end
+	if remaining and not state.preload_scheduled then
+		state.preload_scheduled = true
+		vim.defer_fn(function()
+			state.preload_scheduled = false
+			preload_active_threads()
+		end, 250)
+	end
+end
+
 local sort_threads
 
 local function archive_thread_after_close(thread, callback)
@@ -1241,12 +1453,18 @@ local function archive_thread_after_close(thread, callback)
 	-- owns its writer lease. Wait for the terminal's on_exit callback before
 	-- issuing the archive request so dismissal cannot race that cleanup.
 	local session = state.sessions[thread.id]
-	close_session(session, function(close_err)
-		if close_err then
-			callback(close_err)
+	state.backend:interrupt_thread(thread.id, function(interrupt_err)
+		if interrupt_err then
+			callback(interrupt_err)
 			return
 		end
-		state.backend:archive_thread(thread.id, callback)
+		close_session(session, function(close_err)
+			if close_err then
+				callback(close_err)
+				return
+			end
+			state.backend:archive_thread(thread.id, callback)
+		end)
 	end)
 end
 
@@ -1333,8 +1551,10 @@ end
 
 sort_threads = function()
 	state.active_order = {}
+	-- Local session events can arrive after switching projects, between polls.
+	-- Keep the display boundary scoped as well as the backend list ingestion.
 	for _, thread in pairs(state.threads) do
-		if thread_matches_search(thread) then
+		if Project.contains(state.project, thread.cwd) and thread_matches_search(thread) then
 			table.insert(state.active_order, thread)
 		end
 	end
@@ -1348,7 +1568,7 @@ sort_threads = function()
 	end)
 	state.dismissed_order = {}
 	for _, thread in pairs(state.dismissed_threads) do
-		if thread_matches_search(thread) then
+		if Project.contains(state.project, thread.cwd) and thread_matches_search(thread) then
 			table.insert(state.dismissed_order, thread)
 		end
 	end
@@ -1406,7 +1626,8 @@ detach_session_for_switch = function(session, command)
 	session.switch_kind = command
 	session.switch_from_id = previous_id
 	session.switch_started_at = os.time()
-	session.frontend_status = "loading"
+	session.frontend_status = nil
+	session.default_status = "ready"
 	session.known_ids = {}
 	for id, thread in pairs(state.threads) do
 		session.known_ids[id] = true
@@ -1418,7 +1639,6 @@ detach_session_for_switch = function(session, command)
 		createdAt = os.time(),
 		updatedAt = os.time(),
 		preview = command == "resume" and "Resumed conversation" or "New conversation",
-		_local_status = "loading",
 	}
 	state.threads[key]._activity_at = next_activity_time()
 	session.activity_at = state.threads[key]._activity_at
@@ -1435,6 +1655,40 @@ detach_session_for_switch = function(session, command)
 			refresh_threads()
 		end
 	end, 150)
+end
+
+local function handle_backend_notification(method, params)
+	if state.shutting_down then
+		return
+	end
+	local started = method == "thread/started" and normalize(params.thread) or nil
+	local id = started and started.id or params.threadId
+	local status = started and normalize(started.status)
+		or (method == "thread/status/changed" and normalize(params.status))
+	local thread = id and state.threads[id]
+	if not thread or type(status) ~= "table" or thread._dismissed
+		or state.dismissed_threads[id] or state.dismiss_pending[id]
+	then
+		return
+	end
+
+	local previous = status_name(thread)
+	thread.status = status
+	local session = state.sessions[id]
+	if session and status.type ~= "notLoaded" then
+		session.default_status = "ready"
+	end
+	local current = status_name(thread)
+	if current == "ready" and (previous == "working" or previous == "approval" or previous == "input") then
+		thread._unread = not chat_is_focused(id)
+		local session = state.sessions[id]
+		if session then
+			session.unread = thread._unread
+		end
+		bump_thread(thread)
+	else
+		render_sidebar()
+	end
 end
 
 local function start_backend()
@@ -1541,6 +1795,10 @@ refresh_threads = function()
 					end
 				end
 				if session then
+					local status = normalize(thread.status)
+					if type(status) == "table" and status.type ~= "notLoaded" then
+						session.default_status = "ready"
+					end
 					if session.unread ~= nil and not external_activity then
 						thread._unread = session.unread
 					end
@@ -1584,6 +1842,7 @@ refresh_threads = function()
 				focus_recents()
 			end)
 		end
+		vim.schedule(preload_active_threads)
 	end)
 end
 
@@ -1665,7 +1924,7 @@ local function start_working_animation()
 		return
 	end
 	state.working_animation_timer = vim.uv.new_timer()
-	state.working_animation_timer:start(400, 400, vim.schedule_wrap(function()
+	state.working_animation_timer:start(80, 80, vim.schedule_wrap(function()
 		if not valid_tab(state.tab) or not valid_buf(state.sidebar_buf) then
 			return
 		end
@@ -1677,8 +1936,8 @@ local function start_working_animation()
 			end
 		end
 		if has_working_thread then
-			state.working_animation_frame = (state.working_animation_frame + 1) % 3
-			render_sidebar()
+			state.working_animation_frame = (state.working_animation_frame + 1) % 24
+			render_working_animation()
 		else
 			state.working_animation_frame = 0
 		end
@@ -1933,9 +2192,16 @@ local function switch_recents_tab(tab)
 	end
 	state.selected_ids[state.recents_tab] = state.selected_id
 	state.recents_tab = tab
-	state.selected_id = state.selected_ids[tab]
+	state.selected_id = nil
+	state.selected_ids[tab] = nil
 	sort_threads()
 	render_sidebar()
+	if valid_win(state.sidebar_win) then
+		vim.api.nvim_win_call(state.sidebar_win, function()
+			-- Tab changes start at the header, even after scrolling the other list.
+			vim.fn.winrestview({ topline = 1, topfill = 0, leftcol = 0, skipcol = 0 })
+		end)
+	end
 	if tab == "dismissed" then
 		refresh_dismissed_threads()
 	end
@@ -1957,7 +2223,9 @@ local function cycle_recents_tab(delta)
 	switch_recents_tab(tabs[index + 1])
 end
 
-local function move_to_dismissed(thread)
+local open_new_chat
+
+local function move_to_dismissed(thread, skip_preview)
 	local selected_position = nil
 	if state.recents_tab == "active" and state.selected_id == thread.id then
 		selected_position = selected_index()
@@ -1978,6 +2246,9 @@ local function move_to_dismissed(thread)
 		state.selected_ids.active = state.selected_id
 	end
 	render_sidebar()
+	if skip_preview then
+		return
+	end
 	if state.selected_id then
 		if replace_open_chat then
 			M.open_selected(false)
@@ -1985,7 +2256,7 @@ local function move_to_dismissed(thread)
 			M.preload_selected()
 		end
 	elseif valid_win(state.chat_win) then
-		render_placeholder()
+		open_new_chat()
 	end
 end
 
@@ -2004,7 +2275,7 @@ local function move_to_active(thread)
 	end
 end
 
-local function dismiss_thread(thread)
+local function dismiss_thread(thread, skip_preview)
 	if not thread or state.dismiss_pending[thread.id] then
 		return
 	end
@@ -2013,7 +2284,7 @@ local function dismiss_thread(thread)
 		if session then
 			session.dismiss_when_bound = true
 			state.dismiss_pending[thread.id] = true
-			move_to_dismissed(thread)
+			move_to_dismissed(thread, skip_preview)
 		end
 		return
 	end
@@ -2024,7 +2295,7 @@ local function dismiss_thread(thread)
 	end
 
 	state.dismiss_pending[thread.id] = true
-	move_to_dismissed(thread)
+	move_to_dismissed(thread, skip_preview)
 	archive_thread_after_close(thread, function(err)
 		state.dismiss_pending[thread.id] = nil
 		if err then
@@ -2046,8 +2317,12 @@ local function restore_thread(thread, on_restored)
 		return
 	end
 
+	local scope = project_key(state.project)
 	state.dismiss_pending[thread.id] = true
 	state.backend:unarchive_thread(thread.id, function(err, result)
+		if state.shutting_down or scope ~= project_key(state.project) then
+			return
+		end
 		state.dismiss_pending[thread.id] = nil
 		if err then
 			notify("Could not restore conversation: " .. tostring(err), vim.log.levels.WARN)
@@ -2055,6 +2330,9 @@ local function restore_thread(thread, on_restored)
 		end
 		local restored = result and result.thread or thread
 		restored.cwd = normalize(restored.cwd) or thread.cwd or ""
+		if not Project.contains(state.project, restored.cwd) then
+			return
+		end
 		move_to_active(restored)
 		refresh_threads()
 		if on_restored then
@@ -2090,9 +2368,10 @@ local function dismiss_all()
 	local threads = vim.list_slice(state.active_order)
 	for _, thread in ipairs(threads) do
 		if status_name(thread) ~= "working" then
-			dismiss_thread(thread)
+			dismiss_thread(thread, true)
 		end
 	end
+	open_new_chat()
 end
 
 local function filter_recents()
@@ -2229,6 +2508,7 @@ local function create_ui()
 	sidebar_mappings()
 	render_placeholder()
 	render_sidebar()
+	hide_sidebar_cursor()
 end
 
 local function ensure_ui()
@@ -2334,6 +2614,7 @@ function M.open()
 	enter_agent_mode(true)
 	focus_recents()
 	M.preload_selected()
+	vim.schedule(preload_active_threads)
 end
 
 function M.open_selected(focus)
@@ -2649,8 +2930,85 @@ local function recall_composer(delta)
 	end
 end
 
+local function mention_composer_file()
+	local composer = state.composer
+	if not composer or composer.busy or not valid_win(composer.win)
+		or vim.api.nvim_get_current_buf() ~= composer.buf
+	then
+		return
+	end
+	local buf, win = composer.buf, composer.win
+	local cursor = vim.api.nvim_win_get_cursor(win)
+	local row, col = cursor[1] - 1, cursor[2]
+	local line = vim.api.nvim_get_current_line()
+	vim.api.nvim_buf_set_text(buf, row, col, row, col, { "@" })
+	vim.api.nvim_win_set_cursor(win, { row + 1, col + 1 })
+	-- Keep email addresses and other embedded @ characters as ordinary text.
+	if col > 0 and not line:sub(col, col):match("[%s%(%[%{]") then
+		return
+	end
+
+	local target = current_target()
+	local cwd = target and target.path or state.project.launch_cwd
+	local actions = require("telescope.actions")
+	local action_state = require("telescope.actions.state")
+	local function restore_prompt(column)
+		vim.schedule(function()
+			if state.composer ~= composer or not valid_buf(buf) or not valid_win(win)
+				or vim.api.nvim_win_get_buf(win) ~= buf
+			then
+				return
+			end
+			vim.api.nvim_set_current_win(win)
+			vim.api.nvim_win_set_cursor(win, { row + 1, column })
+			local current_line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
+			vim.cmd(column >= #current_line and "startinsert!" or "startinsert")
+		end)
+	end
+	require("telescope.builtin").find_files(require("telescope.themes").get_dropdown({
+		cwd = cwd,
+		prompt_title = "Mention file",
+		previewer = false,
+		-- Include dotfiles and respect ignore files without the global Telescope
+		-- patterns that also hide otherwise useful source paths such as build.nix.
+		find_command = { "rg", "--files", "--hidden", "--glob", "!.git" },
+		file_ignore_patterns = {},
+		attach_mappings = function(prompt_buf, map)
+			actions.select_default:replace(function()
+				local entry = action_state.get_selected_entry()
+				if not entry then
+					return
+				end
+				actions.close(prompt_buf)
+				if state.composer ~= composer or not valid_buf(buf) or composer.busy then
+					return
+				end
+				local path = entry.value:gsub("^%./", "")
+				if path:find('[%s"\\]') then
+					path = vim.json.encode(path)
+				end
+				local text = "@" .. path .. " "
+				vim.api.nvim_buf_set_text(buf, row, col, row, col + 1, { text })
+				restore_prompt(col + #text)
+			end)
+			local function cancel()
+				actions.close(prompt_buf)
+				restore_prompt(col + 1)
+			end
+			for _, mode in ipairs({ "i", "n" }) do
+				map(mode, "<Up>", actions.move_selection_previous)
+				map(mode, "<Down>", actions.move_selection_next)
+				map(mode, "<Esc>", cancel)
+				map(mode, "<C-c>", cancel)
+			end
+			return true
+		end,
+	}))
+end
+
 local function composer_mappings(buf)
 	local options = { buffer = buf, silent = true }
+	vim.keymap.set("i", "@", mention_composer_file, vim.tbl_extend("force", options, { desc = "Mention a project file" }))
 	vim.keymap.set("i", "<CR>", submit_composer, vim.tbl_extend("force", options, { desc = "Start Agent Mode chat" }))
 	vim.keymap.set("n", "<CR>", submit_composer, options)
 	vim.keymap.set({ "n", "i" }, "<C-c>", function()
@@ -2711,8 +3069,15 @@ local function composer_mappings(buf)
 	}))
 end
 
-function M.new_chat()
-	enter_agent_mode(false)
+open_new_chat = function()
+	state.active_id = nil
+	state.auto_open_latest = false
+	if state.preview_timer then
+		state.preview_timer:stop()
+	end
+	if not valid_win(state.chat_win) then
+		return
+	end
 	if state.composer and valid_buf(state.composer.buf) then
 		show_composer()
 		return
@@ -2773,6 +3138,11 @@ function M.new_chat()
 	show_composer()
 end
 
+function M.new_chat()
+	enter_agent_mode(false)
+	open_new_chat()
+end
+
 function M.leave()
 	if not valid_tab(state.tab) then
 		return
@@ -2816,6 +3186,7 @@ end
 
 local function shutdown()
 	state.shutting_down = true
+	restore_sidebar_cursor()
 	if state.composer and state.prompt_history then
 		state.prompt_history:record_final(composer_draft_text(state.composer))
 	end
@@ -2856,8 +3227,10 @@ function M.setup(options)
 	})
 
 	vim.api.nvim_set_hl(0, "AgentModeSelected", { link = "PmenuSel", default = true })
+	vim.api.nvim_set_hl(0, "AgentModeTitle", { bold = true, default = true })
 	vim.api.nvim_set_hl(0, "AgentModeTabSelected", { link = "PmenuSel", default = true })
 	vim.api.nvim_set_hl(0, "AgentModeTabInactive", { link = "Comment", default = true })
+	setup_working_highlights()
 
 	vim.api.nvim_create_user_command("AgentMode", M.open, { desc = "Open Agent Mode recents" })
 	vim.api.nvim_create_user_command("AgentModeNew", M.new_chat, { desc = "Open a new Agent Mode chat" })
@@ -2895,6 +3268,18 @@ function M.setup(options)
 	end
 
 	local group = vim.api.nvim_create_augroup("AgentMode", { clear = true })
+	vim.api.nvim_create_autocmd("ColorScheme", {
+		group = group,
+		callback = setup_working_highlights,
+	})
+	vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter", "ColorScheme" }, {
+		group = group,
+		callback = hide_sidebar_cursor,
+	})
+	vim.api.nvim_create_autocmd({ "WinLeave", "BufLeave" }, {
+		group = group,
+		callback = restore_sidebar_cursor,
+	})
 	local function preload_recents()
 		if state.shutting_down then
 			return
