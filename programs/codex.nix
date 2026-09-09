@@ -18,7 +18,13 @@ let
 
   agentModePython = pkgs.python3.withPackages (ps: [ ps.websockets ]);
   agentModeConnect = pkgs.writeShellScriptBin "agent-mode-connect" ''
+    export PATH="${pkgs.systemd}/bin:$PATH"
     exec ${agentModePython}/bin/python ${./nvim/agent-mode-connect.py} "$@"
+  '';
+  agentModeChat = pkgs.writeShellScriptBin "agent-mode-chat" ''
+    set -e
+    ${pkgs.systemd}/bin/systemctl --user start codex-app-server.service
+    exec "$@"
   '';
 
   # Codex passes a JSON payload as the final argument whenever a turn ends.
@@ -33,7 +39,26 @@ let
     fi
   '';
 in {
-  home.packages = [ codexWrapper agentModeNotify agentModeConnect ];
+  home.packages = [ codexWrapper agentModeNotify agentModeConnect agentModeChat ];
+
+  # Run in the foreground under systemd. Codex's detached daemon keeps a PID
+  # record across reboots, which can refer to an unrelated process after boot.
+  systemd.user.services.codex-app-server = {
+    Unit.Description = "Codex app server";
+    Service = {
+      Type = "exec";
+      WorkingDirectory = "%h";
+      Environment = [ "PATH=%h/.nix-profile/bin:/run/current-system/sw/bin" ];
+      ExecStart = "${codexWrapper}/bin/codexvenv app-server --listen unix:// --remote-control";
+      # systemctl start returns only after the WebSocket accepts connections.
+      ExecStartPost = "${agentModeConnect}/bin/agent-mode-connect --wait";
+      Restart = "on-failure";
+      RestartSec = 2;
+      TimeoutStartSec = 45;
+      TimeoutStopSec = 30;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
 
   home.file.".codex/packages/standalone/current" = {
     source = codexStandalone;

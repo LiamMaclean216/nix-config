@@ -296,6 +296,7 @@ in
     xclip
     github-desktop
     wf-recorder
+    ffmpeg
     bluez-tools
     pkgs-unstable.librepods
     nodejs

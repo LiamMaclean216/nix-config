@@ -7,12 +7,13 @@ local M = {}
 
 local defaults = {
 	command = "codexvenv",
+	launcher = "agent-mode-chat",
 	keys = {
 		new_chat = "<C-c>",
 		recents = "<F10>",
 	},
 	history_limit = 100,
-	history_write_delay = 100,
+	history_write_delay = 0,
 	refresh_interval = 2500,
 	preview_delay = 150,
 	preview_loading_timeout = 5000,
@@ -34,6 +35,8 @@ local state = {
 	dismissed_order = {},
 	dismissed_refreshing = false,
 	dismiss_pending = {},
+	fork_pending = {},
+	move_pending = {},
 	recents_tab = "active",
 	search_term = nil,
 	search = nil,
@@ -49,9 +52,12 @@ local state = {
 	pending_sequence = 0,
 	activity_clock = 0,
 	new_worktree = false,
+	new_worktree_name = nil,
 	new_target = 1,
 	tab = nil,
-	origin_tab = nil,
+	origin_win = nil,
+	editor_options = nil,
+	chat_buf = nil,
 	sidebar_buf = nil,
 	sidebar_win = nil,
 	chat_win = nil,
@@ -78,6 +84,7 @@ local namespace = vim.api.nvim_create_namespace("AgentMode")
 local working_namespace = vim.api.nvim_create_namespace("AgentModeWorking")
 local working_labels = {}
 local codex_backtab = "\27[Z"
+local recents_page_size = 20
 local select_sidebar_row
 
 local function valid_buf(buf)
@@ -157,7 +164,44 @@ local function handle_sidebar_hover()
 	end
 end
 
-local function map_sidebar_hover(buf)
+local function handle_input_click()
+	if not valid_tab(state.tab) or vim.api.nvim_get_current_tabpage() ~= state.tab then
+		return "<LeftMouse>"
+	end
+	local mouse = vim.fn.getmousepos()
+	if not valid_win(mouse.winid) or mouse.winrow < 1 or mouse.wincol < 1
+		or mouse.winrow > vim.api.nvim_win_get_height(mouse.winid)
+		or mouse.wincol > vim.api.nvim_win_get_width(mouse.winid)
+	then
+		return "<LeftMouse>"
+	end
+	local buf = vim.api.nvim_win_get_buf(mouse.winid)
+	local terminal = vim.bo[buf].buftype == "terminal"
+		and (mouse.winid == state.chat_win or vim.b[buf].agent_mode_lazygit)
+	local composer = state.composer and mouse.winid == state.composer.win
+		and buf == state.composer.buf and vim.bo[buf].modifiable
+	if not terminal and not composer then
+		return "<LeftMouse>"
+	end
+	-- Process the click in Normal mode so it focuses the destination even when
+	-- the source terminal captures mouse input, then enter input mode there.
+	return "<C-\\><C-n><LeftMouse><Cmd>startinsert<CR>"
+end
+
+local function map_agent_buffer(buf)
+	-- Navigate the Agent Mode panes without invoking editor buffer navigation.
+	for key, action in pairs({ ["<C-h>"] = "focus_recents", ["<C-l>"] = "focus_chat" }) do
+		vim.keymap.set({ "n", "i", "v", "t", "c", "s", "o" }, key, function()
+			local normal = vim.api.nvim_replace_termcodes("<C-\\><C-n>", true, false, true)
+			vim.api.nvim_feedkeys(normal, "n", false)
+			vim.schedule(function() M[action]() end)
+		end, {
+			buffer = buf,
+			silent = true,
+			nowait = true,
+			desc = action == "focus_recents" and "Focus Agent Mode recents" or "Focus Agent Mode chat",
+		})
+	end
 	-- MouseMove is dispatched in the mode and buffer that currently own input,
 	-- which is often the chat terminal or composer while the pointer is over the
 	-- sidebar. Install the handler on every Agent Mode buffer so hovering a recent
@@ -179,7 +223,7 @@ local function set_scratch_options(buf, filetype)
 	vim.bo[buf].modifiable = false
 	vim.bo[buf].undofile = false
 	vim.bo[buf].modeline = false
-	map_sidebar_hover(buf)
+	map_agent_buffer(buf)
 end
 
 local function set_window_options(win, sidebar)
@@ -195,6 +239,7 @@ local function set_window_options(win, sidebar)
 	vim.wo[win].winfixheight = false
 	vim.wo[win].list = false
 	vim.wo[win].colorcolumn = ""
+	vim.wo[win].winbar = ""
 	if sidebar then
 		vim.wo[win].statusline = "  [/] filter  [[]/[]] tab  [Tab] toggle  [j/k] move  [Enter/i] open  [d] toggle  [D] dismiss all  [q] back"
 	else
@@ -205,6 +250,29 @@ end
 local function wanted_sidebar_width()
 	local available = math.max(18, vim.o.columns - 30)
 	return math.min(state.opts.sidebar_width, available)
+end
+
+local function layout_overlay()
+	local width = math.max(1, math.min(wanted_sidebar_width(), vim.o.columns - 2))
+	local height = math.max(1, vim.o.lines - vim.o.cmdheight)
+	local filter_height = state.filter and 2 or 0
+	local function configure(win, row, col, columns, rows, border)
+		local config = {
+			relative = "editor", row = row, col = col, width = columns, height = rows,
+			style = "minimal", border = border or "none", zindex = 40,
+		}
+		if valid_win(win) then
+			vim.api.nvim_win_set_config(win, config)
+		end
+		return config
+	end
+	local sidebar = configure(state.sidebar_win, filter_height, 0, width,
+		math.max(1, height - filter_height), { "", "", "", "│", "", "", "", "" })
+	local chat = configure(state.chat_win, 0, width + 1, math.max(1, vim.o.columns - width - 1), height)
+	if state.filter then
+		configure(state.filter.win, 0, 0, width, 1, { "", "", "", "│", "┤", "─", "", "" })
+	end
+	return sidebar, chat
 end
 
 local function project_key(project)
@@ -362,6 +430,11 @@ local function relative_date(timestamp, now)
 	return os.date("%y-%m-%d", timestamp)
 end
 
+local function setup_tab_highlights()
+	vim.api.nvim_set_hl(0, "AgentModeTabSelected", { link = "PmenuSel", default = true })
+	vim.api.nvim_set_hl(0, "AgentModeTabInactive", { link = "Comment", default = true })
+end
+
 local function setup_working_highlights()
 	local dim = vim.api.nvim_get_hl(0, { name = "Comment", link = false }).fg or 0x808080
 	local bright = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg
@@ -431,7 +504,7 @@ local function target_summary()
 	end
 	local label = target.label or vim.fs.basename(target.path)
 	if state.new_worktree then
-		return "new worktree from " .. label
+		return (state.new_worktree_name or "new worktree") .. " (new, from " .. label .. ")"
 	end
 	return label
 end
@@ -442,23 +515,29 @@ local function render_sidebar()
 	end
 
 	local width = valid_win(state.sidebar_win) and vim.api.nvim_win_get_width(state.sidebar_win) or state.opts.sidebar_width
+	local page = math.floor(((selected_index() or 1) - 1) / recents_page_size)
+	local first = page * recents_page_size + 1
+	local last = math.min(first + recents_page_size - 1, #state.order)
 	if valid_win(state.sidebar_win) then
+		-- The winbar stays above the viewport, independent of buffer scrolling.
+		local active_hl = state.recents_tab == "active" and "AgentModeTabSelected" or "AgentModeTabInactive"
+		local dismissed_hl = state.recents_tab == "dismissed" and "AgentModeTabSelected" or "AgentModeTabInactive"
+		vim.wo[state.sidebar_win].winbar = string.format(
+			"%%#Normal#  %%#%s# Active %d %%#WinSeparator# │ %%#%s# Dismissed %%#Normal#%%=",
+			active_hl, #state.active_order, dismissed_hl
+		)
 		vim.wo[state.sidebar_win].statusline = state.recents_tab == "active"
-			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [d] dismiss  [D] dismiss all  [q] back"
-			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [d] restore  [q] back"
+			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [f] fork  [d] dismiss  [D] dismiss all  [q] back"
+			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [f] fork  [d] restore  [q] back"
 		if state.search_term and not state.filter then
 			vim.wo[state.sidebar_win].statusline = "  [Esc] clear filter" .. vim.wo[state.sidebar_win].statusline
 		end
+		if #state.order > recents_page_size then
+			vim.wo[state.sidebar_win].statusline = string.format("  %d–%d of %d", first, last, #state.order)
+				.. vim.wo[state.sidebar_win].statusline
+		end
 	end
-	local active_tab = string.format(" Active %d ", #state.active_order)
-	local dismissed_tab = " Dismissed "
-	local tab_separator = " │ "
-	local tab_line = "  " .. active_tab .. tab_separator .. dismissed_tab
-	local tab_ranges = {
-		active = { 2, 2 + #active_tab },
-		dismissed = { 2 + #active_tab + #tab_separator, #tab_line },
-	}
-	local lines = { "", tab_line, "" }
+	local lines = { "" }
 	if state.search_term and not state.filter then
 		table.insert(lines, truncate("  Filter: " .. state.search_term, width - 1))
 		table.insert(lines, "")
@@ -486,7 +565,9 @@ local function render_sidebar()
 		end
 		table.insert(lines, empty_message)
 	else
-		for _, thread in ipairs(state.order) do
+		-- Navigation crosses pages automatically; only format and highlight this page.
+		for index = first, last do
+			local thread = state.order[index]
 			local status = status_name(thread)
 			local updated = thread_time(thread)
 			local date = relative_date(updated, now)
@@ -504,6 +585,9 @@ local function render_sidebar()
 			local icon = status_icons[status]
 			local status_text = (icon and icon .. " " or "") .. label
 			local metadata = (status == "saved" or status == "loading") and date or status_text .. " · " .. date
+			if thread._dismiss_queued then
+				metadata = metadata .. " · Queued to dismiss"
+			end
 			table.insert(lines, truncate("  " .. metadata, width - 2))
 			local metadata_row = #lines
 			if status == "working" and width >= 11 then
@@ -535,10 +619,35 @@ local function render_sidebar()
 		end
 	end
 
-	table.insert(lines, "")
-	table.insert(lines, truncate("  New chat: " .. target_summary(), width - 1))
-	table.insert(lines, string.format("  [W] fresh worktree: %s", state.new_worktree and "ON" or "off"))
-	table.insert(lines, "  [w] cycle existing worktree")
+	local footer = {
+		"",
+		truncate("  New chat: " .. target_summary(), width - 1),
+		"  [Ctrl-W] select existing worktree",
+		"  [Ctrl-T/W] move chat to new worktree",
+		"  [w] cycle existing worktree",
+		"",
+		"  [j/k/↓/↑] move  [gg/G] first/last",
+		"  [Tab/[/]] switch recents tab",
+		"  [/] filter  [Esc] clear filter",
+		state.recents_tab == "active" and "  [Enter/i/I] open chat" or "  [Enter] restore and open chat",
+		state.recents_tab == "active" and "  [d] dismiss  [D] dismiss all" or "  [i/I] preview  [d] restore",
+		state.recents_tab == "active" and "  Working: d/D toggle dismiss queue" or "",
+		"  [f] fork and focus chat",
+		"  [q] back",
+	}
+	local keys = state.opts.keys or defaults.keys
+	for _, action in ipairs({ { "new_chat", "new chat" }, { "recents", "recents" } }) do
+		local key = keys[action[1]]
+		if key then
+			table.insert(footer, "  [" .. key:gsub("^<", ""):gsub(">$", "") .. "] " .. action[2])
+		end
+	end
+	-- Keep the footer at the bottom when the conversations leave room for it.
+	local height = valid_win(state.sidebar_win) and vim.api.nvim_win_get_height(state.sidebar_win) or 0
+	for _ = #lines + #footer + 1, height do
+		table.insert(lines, "")
+	end
+	vim.list_extend(lines, footer)
 	state.cursor_rows = cursor_rows
 	state.row_threads = row_threads
 
@@ -546,18 +655,6 @@ local function render_sidebar()
 	vim.api.nvim_buf_set_lines(state.sidebar_buf, 0, -1, false, lines)
 	vim.bo[state.sidebar_buf].modifiable = false
 	vim.api.nvim_buf_clear_namespace(state.sidebar_buf, namespace, 0, -1)
-	for tab, range in pairs(tab_ranges) do
-		local highlight = tab == state.recents_tab and "AgentModeTabSelected" or "AgentModeTabInactive"
-		vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, highlight, 1, range[1], range[2])
-	end
-	vim.api.nvim_buf_add_highlight(
-		state.sidebar_buf,
-		namespace,
-		"WinSeparator",
-		1,
-		tab_ranges.active[2],
-		tab_ranges.dismissed[1]
-	)
 
 	for _, decoration in ipairs(decorations) do
 		for row = decoration.first, decoration.last do
@@ -846,7 +943,7 @@ local function render_composer(message)
 		input_height = input_height + math.max(1, math.ceil(vim.fn.strdisplaywidth(line) / input_width))
 	end
 	input_height = math.max(3, math.min(10, input_height))
-	local content_height = #agent_mode_banner + input_height + (composer.plan_mode and 8 or 7) + (message and 1 or 0)
+	local content_height = #agent_mode_banner + input_height + (composer.plan_mode and 9 or 8) + (message and 1 or 0)
 	local padding = math.max(1, math.floor((height - content_height) / 2))
 	local lines = {}
 	for _ = 1, padding do
@@ -860,7 +957,8 @@ local function render_composer(message)
 		table.insert(lines, centered_text(message, width))
 	end
 	local target_row = #lines + 1
-	table.insert(lines, centered_text("Worktree: " .. target_summary() .. "  ·  Ctrl-T fresh worktree", width))
+	table.insert(lines, centered_text("Worktree: " .. target_summary(), width))
+	table.insert(lines, centered_text("Ctrl-W select worktree  ·  Ctrl-T new worktree", width))
 	local mode_row = nil
 	if composer.plan_mode then
 		mode_row = #lines + 1
@@ -883,6 +981,7 @@ local function render_composer(message)
 		vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "DiagnosticInfo", message_row - 1, 0, -1)
 	end
 	vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "Comment", target_row - 1, 0, -1)
+	vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "Comment", target_row, 0, -1)
 	if mode_row then
 		vim.api.nvim_buf_add_highlight(composer.background_buf, namespace, "DiagnosticWarn", mode_row - 1, 0, -1)
 	end
@@ -1086,11 +1185,51 @@ local function terminal_ui_status(session)
 	return terminal_prompt_status(lines) or (terminal_reports_ready(lines) and "ready" or nil)
 end
 
+local function terminal_plan_mode(session)
+	if not valid_buf(session.buf) then
+		return nil
+	end
+	local count = vim.api.nvim_buf_line_count(session.buf)
+	local lines = vim.api.nvim_buf_get_lines(session.buf, math.max(0, count - 40), count, false)
+	if terminal_prompt_status(lines) then
+		return nil
+	end
+	-- Only inspect the footer after the last composer, never Plan-mode prose
+	-- or old prompts in the transcript. Wait for a footer to be rendered.
+	local footer = {}
+	for index = #lines, 1, -1 do
+		local line = vim.trim(lines[index])
+		if line:sub(1, #"›") == "›" then
+			if #footer > 0 then
+				return table.concat(footer, "\n"):match("Plan mode") ~= nil
+			end
+			return nil
+		end
+		if line ~= "" then
+			table.insert(footer, line)
+		end
+	end
+end
+
 local function attach_terminal_activity(session)
 	local function check_initial_load()
 		if not state.shutting_down and state.session_tokens[session.notify_token] == session
 			and not session.initial_load_complete and terminal_ui_status(session)
 		then
+			if session.restore_plan_mode then
+				local current = terminal_plan_mode(session)
+				if current == nil then
+					return
+				end
+				if not current then
+					if not session.mode_restore_sent and terminal_running(session) then
+						session.mode_restore_sent = true
+						vim.api.nvim_chan_send(session.job_id, codex_backtab)
+					end
+					return
+				end
+				session.restore_plan_mode = nil
+			end
 			finish_initial_load(session)
 		end
 	end
@@ -1113,6 +1252,9 @@ local function attach_terminal_activity(session)
 		if not state.shutting_down and state.session_tokens[session.notify_token] == session
 			and valid_buf(session.buf) and not session.active_elsewhere
 		then
+			if session.restore_plan_mode then
+				notify("Could not confirm restored Plan mode; check the chat's mode before sending", vim.log.levels.WARN)
+			end
 			finish_initial_load(session)
 		end
 	end, state.opts.preview_loading_timeout)
@@ -1129,7 +1271,7 @@ local function configure_terminal_buffer(session)
 	vim.bo[session.buf].bufhidden = "hide"
 	vim.bo[session.buf].buflisted = false
 	vim.bo[session.buf].swapfile = false
-	map_sidebar_hover(session.buf)
+	map_agent_buffer(session.buf)
 
 	vim.keymap.set("t", "<Esc>", function()
 		local normal = vim.api.nvim_replace_termcodes("<C-\\><C-n>", true, false, true)
@@ -1147,14 +1289,13 @@ local function configure_terminal_buffer(session)
 		send_escape_to_codex(session)
 	end, { buffer = session.buf, silent = true, desc = "Send Escape to Codex" })
 
-	-- Codex uses plain Up/Down for shell-style prompt history. Keep Ctrl-Up/Down
-	-- as Agent Mode's public bindings while translating them for the nested TUI.
-	vim.keymap.set("t", "<C-Up>", function()
+	-- Forward plain Up/Down to Codex for shell-style prompt history.
+	vim.keymap.set("t", "<Up>", function()
 		if terminal_running(session) then
 			vim.api.nvim_chan_send(session.job_id, "\27[A")
 		end
 	end, { buffer = session.buf, silent = true, desc = "Older Codex prompt" })
-	vim.keymap.set("t", "<C-Down>", function()
+	vim.keymap.set("t", "<Down>", function()
 		if terminal_running(session) then
 			vim.api.nvim_chan_send(session.job_id, "\27[B")
 		end
@@ -1162,6 +1303,7 @@ local function configure_terminal_buffer(session)
 
 	vim.keymap.set("t", "<S-Tab>", function()
 		if terminal_running(session) then
+			session.restore_plan_mode = nil
 			vim.api.nvim_chan_send(session.job_id, codex_backtab)
 		end
 	end, { buffer = session.buf, silent = true, desc = "Cycle Codex collaboration mode" })
@@ -1187,6 +1329,15 @@ local function configure_terminal_buffer(session)
 			end
 		end
 		local slash_command = prompt and prompt:lower():match("^/(%S+)") or nil
+		if slash_command == "plan" and not session.id and not session.initial_prompt then
+			local inline = prompt:match("^/plan%s+(.+)$")
+			if inline then
+				session.initial_prompt = inline
+			end
+		end
+		if slash_command == "review" and not session.id and not session.initial_prompt then
+			session.initial_prompt = "/review"
+		end
 		if slash_command == "new" or slash_command == "clear" or slash_command == "resume" or slash_command == "fork" then
 			session.pending_thread_switch = slash_command
 		end
@@ -1233,6 +1384,9 @@ end
 
 local function terminal_command(resume_id, notify_token, cwd)
 	local command = type(state.opts.command) == "table" and vim.deepcopy(state.opts.command) or { state.opts.command }
+	if state.opts.launcher then
+		table.insert(command, 1, state.opts.launcher)
+	end
 	-- Explicit remote connections use the daemon's cwd unless --cd is sent.
 	-- jobstart's cwd only changes the local terminal process's directory.
 	vim.list_extend(command, { "--remote", "unix://", "--cd", cwd })
@@ -1311,6 +1465,10 @@ local function create_terminal(resume_id, cwd, key, thread_id, fresh)
 	if existing and terminal_running(existing) then
 		return existing
 	end
+	local plan_mode = existing and terminal_plan_mode(existing)
+	if plan_mode == nil and resume_id then
+		plan_mode = Backend.saved_plan_mode(state.threads[resume_id] or state.dismissed_threads[resume_id])
+	end
 	state.session_sequence = state.session_sequence + 1
 	local notify_token = string.format("%s-%d", vim.fn.getpid(), state.session_sequence)
 	local command = terminal_command(resume_id, notify_token, cwd)
@@ -1325,6 +1483,8 @@ local function create_terminal(resume_id, cwd, key, thread_id, fresh)
 		-- Resumed chats already have a saved canonical ID. Fresh chats start under
 		-- a temporary key and are rebound when the CLI persists its real thread.
 		identity_confirmed = resume_id ~= nil,
+		plan_mode = plan_mode,
+		restore_plan_mode = resume_id ~= nil and plan_mode == true,
 		buf = buf,
 		cwd = cwd,
 		started_at = os.time(),
@@ -1435,6 +1595,7 @@ local function preload_active_threads()
 		-- Loaded threads may have a writer in another client. Leave them alone;
 		-- selecting one explicitly still uses the usual read-only fallback.
 		if not state.sessions[thread.id] and not thread._dismissed and not state.dismiss_pending[thread.id]
+			and not state.move_pending[thread.id]
 			and (not kind or kind == "notLoaded") and thread.cwd and vim.fn.isdirectory(thread.cwd) == 1
 		then
 			if loading < limit then
@@ -1456,6 +1617,7 @@ local function preload_active_threads()
 end
 
 local sort_threads
+local dismiss_completed_thread
 
 local function archive_thread_after_close(thread, callback)
 	-- The app server refuses to archive a thread while the interactive CLI still
@@ -1497,6 +1659,7 @@ local function bind_session(session, thread, identity_confirmed)
 	if placeholder and previous_key:match("^pending%-%d+$") then
 		thread._unread = placeholder._unread
 		thread._activity_at = placeholder._activity_at
+		thread._dismiss_queued = placeholder._dismiss_queued
 		state.threads[previous_key] = nil
 		state.dismissed_threads[previous_key] = nil
 		state.dismiss_pending[previous_key] = nil
@@ -1688,6 +1851,9 @@ local function handle_backend_notification(method, params)
 		session.default_status = "ready"
 	end
 	local current = status_name(thread)
+	if dismiss_completed_thread(thread) then
+		return
+	end
 	if current == "ready" and (previous == "working" or previous == "approval" or previous == "input") then
 		thread._unread = not chat_is_focused(id)
 		local session = state.sessions[id]
@@ -1748,7 +1914,7 @@ refresh_threads = function()
 	local scope = project_key(state.project)
 	local request_uses_state_db = state.history_repaired
 	local request_params = request_uses_state_db and { archived = false, useStateDbOnly = true } or { archived = false }
-	state.backend:list_threads(request_params, function(err, threads)
+	local function receive_threads(err, threads)
 		state.refreshing = false
 		if state.shutting_down then
 			return
@@ -1788,6 +1954,7 @@ refresh_threads = function()
 				if old then
 					thread._unread = old._unread
 					thread._activity_at = old._activity_at
+					thread._dismiss_queued = old._dismiss_queued
 				end
 				local previous_status = old and status_name(old) or nil
 				local session = state.sessions[thread.id]
@@ -1840,6 +2007,9 @@ refresh_threads = function()
 		end
 		state.threads = next_threads
 		sort_threads()
+		for _, thread in ipairs(vim.tbl_values(next_threads)) do
+			dismiss_completed_thread(thread)
+		end
 		render_sidebar()
 
 		if state.auto_open_latest and state.recents_tab == "active" and state.active_order[1] then
@@ -1850,6 +2020,17 @@ refresh_threads = function()
 			end)
 		end
 		vim.schedule(preload_active_threads)
+	end
+	state.backend:list_threads(request_params, function(err, threads)
+		if err or state.shutting_down or scope ~= project_key(state.project) then
+			receive_threads(err, threads)
+			return
+		end
+		Identity.prepare(state.sessions, threads, function(id, callback)
+			state.backend:read_thread(id, callback)
+		end, function()
+			receive_threads(nil, threads)
+		end)
 	end)
 end
 
@@ -2014,7 +2195,8 @@ local function process_notification(payload, notify_token)
 				state.threads[thread_id] = thread
 			end
 			bind_session(session, thread, true)
-				sort_threads()
+			sort_threads()
+			dismiss_completed_thread(thread)
 			render_sidebar()
 			vim.defer_fn(refresh_threads, 150)
 		end
@@ -2204,7 +2386,7 @@ local function switch_recents_tab(tab, selected_id)
 	render_sidebar()
 	if valid_win(state.sidebar_win) then
 		vim.api.nvim_win_call(state.sidebar_win, function()
-			-- Tab changes start at the header, even after scrolling the other list.
+			-- Tab changes start at the first conversation in the new list.
 			vim.fn.winrestview({ topline = 1, topfill = 0, leftcol = 0, skipcol = 0 })
 		end)
 	end
@@ -2282,7 +2464,12 @@ local function move_to_active(thread)
 end
 
 local function dismiss_thread(thread, skip_preview)
-	if not thread or state.dismiss_pending[thread.id] then
+	if not thread or state.dismiss_pending[thread.id] or state.move_pending[thread.id] then
+		return
+	end
+	if thread._dismiss_queued or status_name(thread) == "working" then
+		thread._dismiss_queued = not thread._dismiss_queued or nil
+		render_sidebar()
 		return
 	end
 	if tostring(thread.id):match("^pending%-%d+$") then
@@ -2311,6 +2498,21 @@ local function dismiss_thread(thread, skip_preview)
 			notify("Could not dismiss conversation: " .. tostring(err), vim.log.levels.WARN)
 		end
 	end)
+end
+
+dismiss_completed_thread = function(thread)
+	-- Only authoritative terminal states finish a queued run. Approval/input
+	-- pauses and unloaded snapshots must leave it running and cancellable.
+	local status = normalize(thread.status)
+	if not thread._dismiss_queued or type(status) ~= "table"
+		or (status.type ~= "idle" and status.type ~= "systemError")
+		or not state.backend_ready
+	then
+		return false
+	end
+	thread._dismiss_queued = nil
+	dismiss_thread(thread)
+	return thread._dismissed == true
 end
 
 local function restore_thread(thread, on_restored)
@@ -2367,17 +2569,63 @@ local function toggle_dismissed()
 	end
 end
 
+local function fork_selected()
+	local thread = selected_thread()
+	if not thread or state.fork_pending[thread.id] or state.dismiss_pending[thread.id] or state.move_pending[thread.id] then
+		return
+	end
+	if tostring(thread.id):match("^pending%-%d+$") then
+		notify("Wait for this conversation to finish saving before forking", vim.log.levels.INFO)
+		return
+	end
+	if not state.backend_ready then
+		notify("The recents backend is not ready", vim.log.levels.WARN)
+		start_backend()
+		return
+	end
+	local scope, backend = project_key(state.project), state.backend
+	local pending = state.fork_pending
+	pending[thread.id] = true
+	backend:fork_thread(thread.id, function(err, result)
+		pending[thread.id] = nil
+		if state.shutting_down or scope ~= project_key(state.project) or backend ~= state.backend then
+			return
+		end
+		if err then
+			notify("Could not fork conversation: " .. tostring(err), vim.log.levels.WARN)
+			return
+		end
+		local fork = result.thread
+		fork.cwd = normalize(fork.cwd) or thread.cwd or ""
+		if not Project.contains(state.project, fork.cwd) then
+			return
+		end
+		fork._activity_at = next_activity_time()
+		fork._unread = false
+		state.threads[fork.id] = fork
+		state.search_term, state.search = nil, nil
+		state.auto_open_latest = false
+		switch_recents_tab("active", fork.id)
+		if state.preview_timer then
+			state.preview_timer:stop()
+		end
+		M.open_selected(true)
+	end)
+end
+
 local function dismiss_all()
 	if state.recents_tab ~= "active" then
 		return
 	end
 	local threads = vim.list_slice(state.active_order)
+	local dismissed = false
 	for _, thread in ipairs(threads) do
-		if status_name(thread) ~= "working" then
-			dismiss_thread(thread, true)
-		end
+		dismiss_thread(thread, true)
+		dismissed = dismissed or thread._dismissed == true
 	end
-	open_new_chat()
+	if dismissed then
+		open_new_chat()
+	end
 end
 
 local function search_recents(search)
@@ -2438,7 +2686,7 @@ local function set_recents_filter(input)
 	render_sidebar()
 end
 
-local function finish_recents_filter(apply)
+local function finish_recents_filter(apply, leaving)
 	local filter = state.filter
 	local input = ""
 	if filter then
@@ -2453,8 +2701,17 @@ local function finish_recents_filter(apply)
 		if valid_buf(filter.buf) then
 			vim.api.nvim_buf_delete(filter.buf, { force = true })
 		end
+		if not leaving then
+			layout_overlay()
+		end
+		if not leaving and valid_win(state.sidebar_win) then
+			vim.api.nvim_set_current_win(state.sidebar_win)
+		end
 	end
 	set_recents_filter(input)
+	if leaving then
+		return
+	end
 	if state.selected_id then
 		M.preload_selected()
 	elseif valid_win(state.chat_win) then
@@ -2473,10 +2730,13 @@ local function filter_recents()
 	vim.bo[filter.buf].buftype = "prompt"
 	vim.fn.prompt_setprompt(filter.buf, filter.prompt)
 	vim.api.nvim_buf_set_lines(filter.buf, 0, -1, false, { filter.prompt .. (state.search_term or "") })
-	-- A regular split keeps the input in the sidebar layout as the list updates.
+	-- Reserve the first two sidebar rows without splitting the editor beneath us.
 	filter.win = vim.api.nvim_open_win(filter.buf, true, {
-		split = "above", win = state.sidebar_win, height = 1,
+		relative = "editor", row = 0, col = 0,
+		width = vim.api.nvim_win_get_width(state.sidebar_win), height = 1,
+		style = "minimal", border = "none", zindex = 40,
 	})
+	layout_overlay()
 	set_window_options(filter.win, true)
 	vim.wo[filter.win].winfixheight = true
 	vim.wo[filter.win].statusline = "  [Enter] apply  [Esc] cancel"
@@ -2510,12 +2770,178 @@ local function filter_recents()
 end
 
 local function cycle_worktree()
-	if not state.project or #state.project.worktrees == 0 then
+	if not state.project or #state.project.worktrees == 0 or (state.composer and state.composer.busy) then
 		return
 	end
 	state.new_target = (state.new_target % #state.project.worktrees) + 1
 	state.new_worktree = false
+	state.new_worktree_name = nil
 	update_composer_frame()
+end
+
+-- UI callbacks may arrive after the user has changed projects or submitted a chat.
+local function worktree_prompt_context()
+	local project, composer = state.project, state.composer
+	if not project or not project.common_dir then
+		notify("Worktrees require a Git repository", vim.log.levels.WARN)
+		return
+	end
+	if composer and composer.busy then
+		return
+	end
+	local win = vim.api.nvim_get_current_win()
+	local inserting = vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
+	local function current()
+		return project_key(state.project) == project_key(project) and state.composer == composer
+			and not (composer and composer.busy)
+	end
+	local function restore()
+		vim.schedule(function()
+			if current() and inserting and valid_win(win) and vim.api.nvim_get_current_win() == win then
+				vim.cmd("startinsert")
+			end
+		end)
+	end
+	return project, current, restore
+end
+
+function M.select_worktree()
+	local project, current, restore = worktree_prompt_context()
+	if not project then
+		return
+	end
+	local discovered = Project.discover(project.launch_cwd)
+	local target = current_target()
+	vim.ui.select(discovered.worktrees, {
+		prompt = "Select worktree for new chat:",
+		format_item = function(worktree)
+			local selected = target and target.path == worktree.path and not state.new_worktree
+			return (selected and "* " or "  ") .. (worktree.label or vim.fs.basename(worktree.path))
+				.. " — " .. worktree.path
+		end,
+	}, function(worktree, index)
+		if current() and worktree then
+			state.project.worktrees = discovered.worktrees
+			state.new_target = index
+			state.new_worktree = false
+			state.new_worktree_name = nil
+			update_composer_frame()
+		end
+		restore()
+	end)
+end
+
+local function move_selected_to_new_worktree()
+	local thread, project, backend = selected_thread(), state.project, state.backend
+	if not thread then
+		return
+	end
+	if thread._dismissed then
+		notify("Restore this conversation before moving it", vim.log.levels.INFO)
+		return
+	end
+	if state.move_pending[thread.id] or state.dismiss_pending[thread.id] or state.fork_pending[thread.id] then
+		return
+	end
+	if not project or not project.common_dir then
+		notify("Worktrees require a Git repository", vim.log.levels.WARN)
+		return
+	end
+	if tostring(thread.id):match("^pending%-%d+$") then
+		notify("Wait for this conversation to finish saving before moving it", vim.log.levels.INFO)
+		return
+	end
+	local function available()
+		local status = status_name(state.threads[thread.id] or thread)
+		return status ~= "working" and status ~= "approval" and status ~= "input"
+	end
+	if not available() then
+		notify("Wait for this conversation to finish working before moving it", vim.log.levels.INFO)
+		return
+	end
+	if not state.backend_ready or not backend then
+		notify("The recents backend is not ready", vim.log.levels.WARN)
+		return
+	end
+	local scope, source = project_key(project), thread.cwd
+	local function current()
+		return not state.shutting_down and project_key(state.project) == scope and state.backend == backend
+	end
+	vim.ui.input({ prompt = "New worktree name: " }, function(name)
+		if not current() or state.selected_id ~= thread.id or state.recents_tab ~= "active"
+			or not name or vim.trim(name) == "" or not available()
+			or state.move_pending[thread.id] or state.dismiss_pending[thread.id]
+			or state.fork_pending[thread.id] or not state.threads[thread.id]
+		then
+			return
+		end
+		name = vim.trim(name)
+		local name_err = Project.worktree_name_error(name)
+		if name_err then
+			notify(name_err, vim.log.levels.WARN)
+			return
+		end
+		state.move_pending[thread.id] = true
+		Project.create_worktree(project, source, function(create_err, path)
+			local function finish(err, moved)
+				state.move_pending[thread.id] = nil
+				if not current() then return end
+				local target = current_target()
+				state.project.worktrees = Project.discover(project.launch_cwd).worktrees
+				for index, worktree in ipairs(state.project.worktrees) do
+					if target and worktree.path == target.path then state.new_target = index end
+				end
+				if err then
+					notify("Could not move conversation: " .. tostring(err)
+						.. (path and (". Created worktree: " .. path) or ""), vim.log.levels.WARN)
+				else
+					state.threads[thread.id] = vim.tbl_extend("force", state.threads[thread.id] or thread, moved or {}, {
+						cwd = path,
+					})
+				end
+				sort_threads()
+				render_sidebar()
+				if state.selected_id == thread.id then M.open_selected(false) end
+				refresh_threads()
+			end
+			if create_err or not current() or not available() then
+				finish(create_err or "The conversation changed while creating the worktree")
+				return
+			end
+			close_session(state.sessions[thread.id], function(close_err)
+				if close_err or not current() then
+					finish(close_err or "The project changed")
+					return
+				end
+				backend:move_thread(thread.id, path, finish)
+			end)
+		end, name)
+	end)
+end
+
+function M.new_worktree()
+	if vim.api.nvim_get_current_buf() == state.sidebar_buf then
+		move_selected_to_new_worktree()
+		return
+	end
+	local project, current, restore = worktree_prompt_context()
+	if not project then
+		return
+	end
+	vim.ui.input({ prompt = "New worktree name: ", default = state.new_worktree_name or "" }, function(name)
+		if current() and name and vim.trim(name) ~= "" then
+			name = vim.trim(name)
+			local err = Project.worktree_name_error(name)
+			if err then
+				notify(err, vim.log.levels.WARN)
+			else
+				state.new_worktree = true
+				state.new_worktree_name = name
+				update_composer_frame()
+			end
+		end
+		restore()
+	end)
 end
 
 function M.toggle_worktree()
@@ -2524,6 +2950,7 @@ function M.toggle_worktree()
 		return
 	end
 	state.new_worktree = not state.new_worktree
+	state.new_worktree_name = nil
 	update_composer_frame()
 end
 
@@ -2559,10 +2986,13 @@ local function sidebar_mappings()
 		cycle_recents_tab(1)
 	end, vim.tbl_extend("force", options, { desc = "Show next Agent Mode recents tab" }))
 	vim.keymap.set("n", "d", toggle_dismissed, vim.tbl_extend("force", options, {
-		desc = "Dismiss or restore Agent Mode recent",
+		desc = "Dismiss, toggle queued dismissal, or restore Agent Mode recent",
+	}))
+	vim.keymap.set("n", "f", fork_selected, vim.tbl_extend("force", options, {
+		desc = "Fork and focus Agent Mode chat",
 	}))
 	vim.keymap.set("n", "D", dismiss_all, vim.tbl_extend("force", options, {
-		desc = "Dismiss all active Agent Mode recents",
+		desc = "Dismiss idle recents and toggle queued dismissal for working recents",
 	}))
 	vim.keymap.set("n", "gg", function()
 		if state.order[1] then
@@ -2592,32 +3022,47 @@ local function sidebar_mappings()
 		end, vim.tbl_extend("force", options, { desc = "Open Agent Mode chat" }))
 	end
 	vim.keymap.set("n", "w", cycle_worktree, vim.tbl_extend("force", options, { desc = "Cycle new chat worktree" }))
-	vim.keymap.set("n", "W", M.toggle_worktree, vim.tbl_extend("force", options, { desc = "Toggle fresh worktree" }))
+	vim.keymap.set("n", "<C-w>", M.select_worktree, vim.tbl_extend("force", options, { desc = "Select existing worktree" }))
+	for _, key in ipairs({ "W", "<C-t>" }) do
+		vim.keymap.set("n", key, M.new_worktree, vim.tbl_extend("force", options, { desc = "Move chat to new worktree" }))
+	end
 	vim.keymap.set("n", "q", M.leave, vim.tbl_extend("force", options, { desc = "Leave Agent Mode" }))
 end
 
 local function create_ui()
-	state.origin_tab = vim.api.nvim_get_current_tabpage()
-	vim.cmd("tabnew")
+	state.origin_win = vim.api.nvim_get_current_win()
 	state.tab = vim.api.nvim_get_current_tabpage()
-	state.chat_win = vim.api.nvim_get_current_win()
-	state.placeholder_buf = vim.api.nvim_create_buf(false, true)
-	pcall(vim.api.nvim_buf_set_name, state.placeholder_buf, "agent://conversation")
-	set_scratch_options(state.placeholder_buf, "agentmode")
-	vim.api.nvim_win_set_buf(state.chat_win, state.placeholder_buf)
+	state.editor_options = { showtabline = vim.o.showtabline, laststatus = vim.o.laststatus, cmdheight = vim.o.cmdheight }
+	vim.o.showtabline = 0
+	vim.o.laststatus = 0
+	vim.o.cmdheight = 0
+	if not valid_buf(state.placeholder_buf) then
+		state.placeholder_buf = vim.api.nvim_create_buf(false, true)
+		pcall(vim.api.nvim_buf_set_name, state.placeholder_buf, "agent://conversation")
+		set_scratch_options(state.placeholder_buf, "agentmode")
+	end
+	local sidebar_config, chat_config = layout_overlay()
+	state.chat_win = vim.api.nvim_open_win(valid_buf(state.chat_buf) and state.chat_buf or state.placeholder_buf,
+		false, chat_config)
 	set_window_options(state.chat_win, false)
+	vim.wo[state.chat_win].winblend = 0
+	vim.wo[state.chat_win].winhighlight = "NormalFloat:Normal"
 
-	vim.cmd("topleft vsplit")
-	state.sidebar_win = vim.api.nvim_get_current_win()
-	state.sidebar_buf = vim.api.nvim_create_buf(false, true)
-	pcall(vim.api.nvim_buf_set_name, state.sidebar_buf, "agent://recents")
-	set_scratch_options(state.sidebar_buf, "agentmoderecents")
-	vim.api.nvim_win_set_buf(state.sidebar_win, state.sidebar_buf)
+	if not valid_buf(state.sidebar_buf) then
+		state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+		pcall(vim.api.nvim_buf_set_name, state.sidebar_buf, "agent://recents")
+		set_scratch_options(state.sidebar_buf, "agentmoderecents")
+	end
+	state.sidebar_win = vim.api.nvim_open_win(state.sidebar_buf, true, sidebar_config)
 	set_window_options(state.sidebar_win, true)
-	vim.api.nvim_win_set_width(state.sidebar_win, wanted_sidebar_width())
+	vim.wo[state.sidebar_win].winblend = 0
+	vim.wo[state.sidebar_win].winhighlight = "NormalFloat:Normal,FloatBorder:WinSeparator,WinBar:Normal,WinBarNC:Normal"
 	sidebar_mappings()
 	render_placeholder()
 	render_sidebar()
+	if state.composer and vim.api.nvim_win_get_buf(state.chat_win) == state.composer.background_buf then
+		render_composer(state.composer.message)
+	end
 	hide_sidebar_cursor()
 end
 
@@ -2626,13 +3071,7 @@ local function ensure_ui()
 		vim.api.nvim_set_current_tabpage(state.tab)
 		return
 	end
-	state.tab = nil
-	state.sidebar_win = nil
-	state.chat_win = nil
-	state.sidebar_buf = nil
-	state.placeholder_buf = nil
-	state.row_threads = nil
-	state.composer = nil
+	M.leave()
 	create_ui()
 end
 
@@ -2667,7 +3106,9 @@ local function set_project(directory, reset_target)
 		end
 	end
 	if changed then
+		state.chat_buf = nil
 		state.new_worktree = false
+		state.new_worktree_name = nil
 		local old_composer = state.composer
 		if state.composer then
 			if state.prompt_history then
@@ -2682,6 +3123,8 @@ local function set_project(directory, reset_target)
 		state.dismissed_order = {}
 		state.dismissed_refreshing = false
 		state.dismiss_pending = {}
+		state.fork_pending = {}
+		state.move_pending = {}
 		state.selected_ids = {}
 		state.recents_tab = "active"
 		state.search_term = nil
@@ -2706,9 +3149,6 @@ end
 
 local function enter_agent_mode(open_latest)
 	local from_agent_tab = valid_tab(state.tab) and vim.api.nvim_get_current_tabpage() == state.tab
-	if not from_agent_tab then
-		state.origin_tab = vim.api.nvim_get_current_tabpage()
-	end
 	local directory = from_agent_tab and (state.project and state.project.launch_cwd or vim.fn.getcwd()) or current_entry_directory()
 	set_project(directory, not from_agent_tab)
 	ensure_ui()
@@ -2730,7 +3170,7 @@ end
 
 function M.open_selected(focus)
 	local thread = selected_thread()
-	if not thread then
+	if not thread or state.move_pending[thread.id] then
 		return
 	end
 	hide_composer()
@@ -2796,8 +3236,31 @@ function M.open_selected(focus)
 	end
 end
 
+function M.focus_chat()
+	if not valid_win(state.chat_win) then
+		return
+	end
+	if state.filter then
+		finish_recents_filter(true)
+	end
+	if state.preview_timer then
+		state.preview_timer:stop()
+	end
+	local buf = vim.api.nvim_win_get_buf(state.chat_win)
+	if state.composer and buf == state.composer.background_buf then
+		show_composer()
+	elseif vim.api.nvim_get_current_win() ~= state.chat_win and selected_thread() then
+		M.open_selected(true)
+	else
+		vim.api.nvim_set_current_win(state.chat_win)
+		if vim.bo[buf].buftype == "terminal" then
+			vim.cmd("startinsert")
+		end
+	end
+end
+
 local function wait_for_composer(session, prompt, attempt)
-	if not terminal_running(session) then
+	if session.initial_send_scheduled or not terminal_running(session) then
 		return
 	end
 	local line_count = valid_buf(session.buf) and vim.api.nvim_buf_line_count(session.buf) or 0
@@ -2822,10 +3285,18 @@ local function wait_for_composer(session, prompt, attempt)
 	if tail:find("enter to select", 1, true) or tail:find("approval required", 1, true) then
 		ready = false
 	end
-	if ready then
-		if session.initial_send_scheduled then
-			return
+	if ready and session.plan_mode then
+		-- The composer can appear before its footer, and a remote CLI may take
+		-- longer than one timer tick to apply BackTab. Confirm Plan mode before
+		-- pasting; never toggle an already selected mode or repeat a pending toggle.
+		local current = terminal_plan_mode(session)
+		if current == false and not session.initial_mode_switch_sent then
+			session.initial_mode_switch_sent = true
+			vim.api.nvim_chan_send(session.job_id, codex_backtab)
 		end
+		ready = current == true
+	end
+	if ready then
 		session.initial_send_scheduled = true
 		local function send_prompt()
 			if not terminal_running(session) then
@@ -2842,24 +3313,16 @@ local function wait_for_composer(session, prompt, attempt)
 				if not terminal_running(session) then
 					return
 				end
-					vim.api.nvim_chan_send(session.job_id, "\r")
+				vim.api.nvim_chan_send(session.job_id, "\r")
 			end, 250)
 		end
-		if session.plan_mode then
-			-- Codex recognizes BackTab (ESC [ Z) as its collaboration-mode
-			-- switch. New Codex sessions start in Default mode, so one BackTab
-			-- selects Plan mode for this chat before its first prompt is sent.
-			vim.api.nvim_chan_send(session.job_id, codex_backtab)
-			vim.defer_fn(send_prompt, 100)
-		else
-			send_prompt()
-		end
+		send_prompt()
 		return
 	end
 	if attempt == 50 then
 		notify("Waiting for Codex to finish startup before sending the first message", vim.log.levels.INFO)
 	elseif attempt >= 600 then
-		notify("Codex did not reach its chat prompt; the first message was not sent", vim.log.levels.ERROR)
+		notify("Codex did not reach its chat prompt in the requested mode; the first message was not sent", vim.log.levels.ERROR)
 		return
 	end
 	vim.defer_fn(function()
@@ -2980,8 +3443,9 @@ local function submit_composer()
 			state.project = Project.discover(path)
 			choose_current_worktree()
 			state.new_worktree = false
+			state.new_worktree_name = nil
 			launch_new_chat(path, prompt, focus_chat, composer.plan_mode)
-		end)
+		end, state.new_worktree_name)
 	else
 		launch_new_chat(cwd, prompt, nil, composer.plan_mode)
 	end
@@ -2991,8 +3455,9 @@ local function replace_composer_text(composer, text)
 	if not composer or not valid_buf(composer.buf) then
 		return
 	end
-	composer.ignore_history_text = text
+	composer.replacing_text = true
 	vim.api.nvim_buf_set_lines(composer.buf, 0, -1, false, vim.split(text, "\n", { plain = true }))
+	composer.replacing_text = false
 	composer.text = text
 	render_composer(composer.message)
 	if valid_win(composer.win) then
@@ -3135,10 +3600,10 @@ local function composer_mappings(buf)
 		composer.history_draft = nil
 		replace_composer_text(composer, "")
 	end, vim.tbl_extend("force", options, { desc = "Clear Agent Mode prompt" }))
-	vim.keymap.set({ "n", "i" }, "<C-Up>", function()
+	vim.keymap.set({ "n", "i" }, "<Up>", function()
 		recall_composer(-1)
 	end, vim.tbl_extend("force", options, { desc = "Older Agent Mode prompt" }))
-	vim.keymap.set({ "n", "i" }, "<C-Down>", function()
+	vim.keymap.set({ "n", "i" }, "<Down>", function()
 		recall_composer(1)
 	end, vim.tbl_extend("force", options, { desc = "Newer Agent Mode prompt" }))
 	local function insert_newline()
@@ -3175,8 +3640,11 @@ local function composer_mappings(buf)
 			vim.cmd("startinsert")
 		end, options)
 	end
-	vim.keymap.set({ "n", "i" }, "<C-t>", M.toggle_worktree, vim.tbl_extend("force", options, {
-		desc = "Toggle fresh worktree for Agent Mode chat",
+	vim.keymap.set({ "n", "i" }, "<C-w>", M.select_worktree, vim.tbl_extend("force", options, {
+		desc = "Select existing worktree for Agent Mode chat",
+	}))
+	vim.keymap.set({ "n", "i" }, "<C-t>", M.new_worktree, vim.tbl_extend("force", options, {
+		desc = "Name new worktree for Agent Mode chat",
 	}))
 end
 
@@ -3209,28 +3677,39 @@ open_new_chat = function()
 		state.prompt_history:begin()
 	end
 	composer_mappings(buf)
-	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-		buffer = buf,
-		callback = function()
-			if state.composer and state.composer.buf == buf then
-				local composer = state.composer
-				local text = composer_text(composer)
-				if composer.ignore_history_text == text then
-					composer.ignore_history_text = nil
-				else
-					composer.ignore_history_text = nil
-					local was_recalling = composer.history_index ~= nil
-					composer.history_index = nil
-					composer.history_ceiling = nil
-					composer.history_draft = nil
-					if state.prompt_history then
-						if was_recalling then
-							state.prompt_history:begin()
-						end
-						state.prompt_history:record(text)
-					end
+	-- Buffer callbacks see every edit, including completion, paste and edits
+	-- immediately followed by a mapping. TextChangedI can coalesce those edits
+	-- or run after Up has already replaced the draft.
+	vim.api.nvim_buf_attach(buf, false, {
+		on_lines = function()
+			local composer = state.composer
+			if not composer or composer.buf ~= buf then
+				return true
+			end
+			if composer.replacing_text then
+				return
+			end
+			local text = composer_text(composer)
+			local was_recalling = composer.history_index ~= nil
+			composer.history_index = nil
+			composer.history_ceiling = nil
+			composer.history_draft = nil
+			composer.text = text
+			if state.prompt_history then
+				if was_recalling then
+					state.prompt_history:begin()
 				end
-				render_composer(composer.message)
+				state.prompt_history:record(text)
+			end
+			-- Rendering changes buffers/windows and must happen outside textlock.
+			if not composer.render_pending then
+				composer.render_pending = true
+				vim.schedule(function()
+					composer.render_pending = false
+					if state.composer == composer and valid_win(composer.win) then
+						render_composer(composer.message)
+					end
+				end)
 			end
 		end,
 	})
@@ -3254,29 +3733,49 @@ function M.new_chat()
 	open_new_chat()
 end
 
-function M.leave()
-	if not valid_tab(state.tab) then
+function M.leave(restore_focus)
+	if not state.tab then
 		return
 	end
+	state.tab = nil
 	vim.cmd("stopinsert")
-	restore_mouse_hover()
-	if valid_tab(state.origin_tab) and state.origin_tab ~= state.tab then
-		vim.api.nvim_set_current_tabpage(state.origin_tab)
-		return
+	if state.preview_timer then
+		state.preview_timer:stop()
 	end
-	local tabs = vim.api.nvim_list_tabpages()
-	for _, tab in ipairs(tabs) do
-		if tab ~= state.tab then
-			vim.api.nvim_set_current_tabpage(tab)
-			return
+	restore_sidebar_cursor()
+	restore_mouse_hover()
+	if valid_win(state.chat_win) then
+		state.chat_buf = vim.api.nvim_win_get_buf(state.chat_win)
+	end
+	hide_composer()
+	if state.filter then
+		finish_recents_filter(true, true)
+	end
+	for _, win in pairs({ state.sidebar_win, state.chat_win }) do
+		if valid_win(win) then
+			vim.api.nvim_win_close(win, true)
 		end
 	end
+	state.sidebar_win, state.chat_win = nil, nil
+	if state.editor_options then
+		-- Restore cmdheight before resizing the bars so Neovim also saves the
+		-- restored height in this tab page during TabLeave.
+		vim.o.cmdheight = state.editor_options.cmdheight
+		vim.o.showtabline = state.editor_options.showtabline
+		vim.o.laststatus = state.editor_options.laststatus
+		state.editor_options = nil
+	end
+	if restore_focus ~= false and valid_win(state.origin_win) then
+		vim.api.nvim_set_current_win(state.origin_win)
+	end
+	state.origin_win = nil
 end
 
 local function resize_ui()
-	if valid_win(state.sidebar_win) then
-		pcall(vim.api.nvim_win_set_width, state.sidebar_win, wanted_sidebar_width())
+	if not valid_tab(state.tab) then
+		return
 	end
+	layout_overlay()
 	if state.composer and valid_buf(state.composer.buf) and valid_buf(state.composer.background_buf)
 		and valid_win(state.chat_win)
 		and vim.api.nvim_win_get_buf(state.chat_win) == state.composer.background_buf
@@ -3339,8 +3838,7 @@ function M.setup(options)
 
 	vim.api.nvim_set_hl(0, "AgentModeSelected", { link = "PmenuSel", default = true })
 	vim.api.nvim_set_hl(0, "AgentModeTitle", { bold = true, default = true })
-	vim.api.nvim_set_hl(0, "AgentModeTabSelected", { link = "PmenuSel", default = true })
-	vim.api.nvim_set_hl(0, "AgentModeTabInactive", { link = "Comment", default = true })
+	setup_tab_highlights()
 	setup_working_highlights()
 
 	vim.api.nvim_create_user_command("AgentMode", M.open, { desc = "Open Agent Mode recents" })
@@ -3366,7 +3864,7 @@ function M.setup(options)
 		end
 	end
 	if state.opts.keys.new_chat then
-		vim.keymap.set(modes, state.opts.keys.new_chat, global_action(M.new_chat), {
+		vim.keymap.set("n", state.opts.keys.new_chat, global_action(M.new_chat), {
 			silent = true,
 			desc = "Agent Mode: new chat",
 		})
@@ -3379,9 +3877,17 @@ function M.setup(options)
 	end
 
 	local group = vim.api.nvim_create_augroup("AgentMode", { clear = true })
+	vim.keymap.set({ "n", "i", "x", "t" }, "<LeftMouse>", handle_input_click, {
+		expr = true,
+		silent = true,
+		desc = "Agent Mode: click to enter input mode",
+	})
 	vim.api.nvim_create_autocmd("ColorScheme", {
 		group = group,
-		callback = setup_working_highlights,
+		callback = function()
+			setup_tab_highlights()
+			setup_working_highlights()
+		end,
 	})
 	vim.api.nvim_create_autocmd({ "WinEnter", "BufEnter", "ColorScheme" }, {
 		group = group,
@@ -3414,6 +3920,23 @@ function M.setup(options)
 	vim.api.nvim_create_autocmd("VimResized", {
 		group = group,
 		callback = vim.schedule_wrap(resize_ui),
+	})
+	vim.api.nvim_create_autocmd("TabLeave", {
+		group = group,
+		callback = function() M.leave(false) end,
+	})
+	vim.api.nvim_create_autocmd("WinClosed", {
+		group = group,
+		callback = function(event)
+			local win = tonumber(event.match)
+			if state.tab and (win == state.sidebar_win or win == state.chat_win) then
+				vim.schedule(function()
+					if state.tab and (not valid_win(state.sidebar_win) or not valid_win(state.chat_win)) then
+						M.leave()
+					end
+				end)
+			end
+		end,
 	})
 	vim.api.nvim_create_autocmd("VimLeavePre", {
 		group = group,

@@ -213,8 +213,21 @@ local function callback_later(callback, err, path)
 	end)
 end
 
-function M.create_worktree(project, base_path, callback)
+function M.worktree_name_error(name)
+	if type(name) ~= "string" or not name:match("^[%w_-][%w._-]*$") then
+		return "Use letters, numbers, dots, underscores or hyphens; names cannot start with a dot"
+	end
+end
+
+function M.create_worktree(project, base_path, callback, name)
 	callback = type(callback) == "function" and callback or function() end
+	if name ~= nil then
+		local err = M.worktree_name_error(name)
+		if err then
+			callback_later(callback, err, nil)
+			return nil
+		end
+	end
 	if not project then
 		callback_later(callback, "missing project", nil)
 		return nil
@@ -235,13 +248,21 @@ function M.create_worktree(project, base_path, callback)
 		return nil
 	end
 
-	local timestamp = os.date("!%Y%m%dT%H%M%SZ")
-	local pid = vim.fn.getpid()
 	local path
-	repeat
-		worktree_counter = worktree_counter + 1
-		path = vim.fs.joinpath(parent, string.format("%s-%s-%d", timestamp, pid, worktree_counter))
-	until not uv.fs_stat(path)
+	if name then
+		path = vim.fs.joinpath(parent, name)
+		if uv.fs_lstat(path) then
+			callback_later(callback, "Worktree path already exists: " .. path, nil)
+			return nil
+		end
+	else
+		local timestamp = os.date("!%Y%m%dT%H%M%SZ")
+		local pid = vim.fn.getpid()
+		repeat
+			worktree_counter = worktree_counter + 1
+			path = vim.fs.joinpath(parent, string.format("%s-%s-%d", timestamp, pid, worktree_counter))
+		until not uv.fs_lstat(path)
+	end
 
 	return vim.system(
 		{ "git", "-C", base_path, "worktree", "add", "--detach", path, "HEAD" },

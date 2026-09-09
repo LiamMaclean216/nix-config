@@ -36,7 +36,7 @@ function History.new(opts)
 	opts = opts or {}
 	local self = setmetatable({}, History)
 	self.limit = math.max(1, tonumber(opts.limit) or 100)
-	self.write_delay = math.max(0, tonumber(opts.write_delay) or 100)
+	self.write_delay = math.max(0, tonumber(opts.write_delay) or 0)
 	self.path = opts.path or vim.fs.joinpath(vim.fn.stdpath("state"), "agent-mode", "prompt-history.json")
 	self.on_error = opts.on_error
 	self.entries = {}
@@ -189,10 +189,10 @@ function History:record(text)
 		return false
 	end
 	if starts_with(text, self.observed_text) and starts_with(text, self.active_text) then
-		self.entries[self.active_index] = text
-		self.active_text = text
-		self.observed_text = text
-		self:_changed()
+		-- Growing a draft can reach an older saved prompt exactly. Deduplicate
+		-- that entry too, rather than keeping a second copy of the full prompt.
+		table.remove(self.entries, self.active_index)
+		self:_append_active(text)
 		return true
 	end
 	if starts_with(self.observed_text, text) then

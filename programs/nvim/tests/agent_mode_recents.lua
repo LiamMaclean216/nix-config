@@ -184,7 +184,16 @@ test("remote terminals receive their own project directory for new and resumed c
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
 	local cli = directory .. "/cli.sh"
+	local launcher = directory .. "/launcher.sh"
 	vim.fn.writefile({
+		"#!" .. vim.fn.exepath("sh"),
+		"sleep 0.1",
+		"touch service-ready",
+		'exec "$@"',
+	}, launcher)
+	vim.fn.setfperm(launcher, "rwx------")
+	vim.fn.writefile({
+		'test -f service-ready || exit 1',
 		'cwd=/shared-daemon-project',
 		'while [ "$#" -gt 0 ]; do',
 		'  case "$1" in --cd) cwd=$2; shift;; esac',
@@ -195,6 +204,7 @@ test("remote terminals receive their own project directory for new and resumed c
 		'sleep 2',
 	}, cli)
 	state.opts.command = { vim.fn.exepath("sh"), cli }
+	state.opts.launcher = launcher
 	state.chat_win = vim.api.nvim_get_current_win()
 	local sessions = {}
 	local ok, err = pcall(function()
@@ -234,10 +244,9 @@ test("both recents tabs exclude rows from another project even between refreshes
 end)
 
 test("inline recents filtering updates both full lists and supports apply, clear, and cancel", function()
-	vim.cmd("tabnew")
-	state.sidebar_win = vim.api.nvim_get_current_win()
-	state.sidebar_buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_win_set_buf(state.sidebar_win, state.sidebar_buf)
+	state.opts.sidebar_width = 24
+	state.opts.preview_delay = 1
+	internals.create_ui()
 	state.threads = { alpha = thread("alpha", "alpha chat"), beta = thread("beta", "beta chat") }
 	state.dismissed_threads = { old = thread("old", "alpha archived") }
 	state.backend = { search_threads = function(_, params, callback)
@@ -264,7 +273,7 @@ test("inline recents filtering updates both full lists and supports apply, clear
 		end
 		key("/")
 		local filter = assert(state.filter)
-		assert(vim.api.nvim_win_get_config(filter.win).relative == "", "input must be a regular inline split")
+		assert(vim.api.nvim_win_get_config(filter.win).relative == "editor", "input must stay within the overlay")
 		assert(vim.api.nvim_win_get_position(filter.win)[1] < vim.api.nvim_win_get_position(state.sidebar_win)[1])
 		type_query("alpha")
 		assert(#state.order == 1 and state.order[1].id == "alpha")
@@ -298,11 +307,12 @@ test("inline recents filtering updates both full lists and supports apply, clear
 		feed("/alpha<Esc>")
 		assert(not state.filter and not state.search_term and #state.order == 2)
 	end)
-	mode.preload_selected = preload
 	vim.cmd("stopinsert")
 	if state.filter then internals.finish_recents_filter(false) end
-	vim.cmd("tabclose!")
+	mode.leave()
+	mode.preload_selected = preload
 	vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+	vim.api.nvim_buf_delete(state.placeholder_buf, { force = true })
 	assert(ok, err)
 end)
 
@@ -442,6 +452,244 @@ test("a delayed restore from another project cannot select or open its chat", fu
 	assert(state.selected_id == "current")
 end)
 
+for _, tab in ipairs({ "active", "dismissed" }) do
+	test("f forks the hovered " .. tab .. " chat to the top, Ready and focused", function()
+		vim.cmd("tabnew")
+		state.tab = vim.api.nvim_get_current_tabpage()
+		state.sidebar_win = vim.api.nvim_get_current_win()
+		state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(state.sidebar_win, state.sidebar_buf)
+		vim.cmd("vsplit")
+		state.chat_win = vim.api.nvim_get_current_win()
+		state.placeholder_buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(state.chat_win, state.placeholder_buf)
+		vim.api.nvim_set_current_win(state.sidebar_win)
+		local cwd = vim.fn.getcwd()
+		state.project = { launch_cwd = cwd, worktrees = { { path = cwd } } }
+		state.opts.preview_delay = 150
+		state.opts.command = { vim.fn.exepath("sh"), "-c", "printf '› Ask Codex to do anything\\n'; sleep 30" }
+		local source = thread("source", "source history", {
+			cwd = cwd, status = { type = "active" }, _dismissed = tab == "dismissed" or nil,
+		})
+		local recent = thread("recent", nil, { cwd = cwd, updatedAt = os.time() + 100 })
+		state.threads.recent = recent
+		local source_list = tab == "active" and state.threads or state.dismissed_threads
+		source_list.source = source
+		state.recents_tab = tab
+		state.search_term = "history"
+		state.search = { matches = { source = true, recent = true } }
+		internals.sort_threads()
+		internals.sidebar_mappings()
+		internals.render_sidebar()
+		local reply, requests = nil, 0
+		state.backend = {
+			fork_thread = function(_, id, callback)
+				assert(id == "source", "fork the hovered row, regardless of the open chat")
+				requests, reply = requests + 1, callback
+			end,
+		}
+		local job
+		local ok, err = pcall(function()
+			internals.select_sidebar_row(state.cursor_rows.source)
+			state.active_id = "recent"
+			local fork_key = vim.fn.maparg("f", "n", false, true).callback
+			fork_key()
+			fork_key()
+			assert(requests == 1 and not state.threads.fork, "deduplicate while the fork is pending")
+			local fork = thread("fork", "source history", { cwd = cwd, status = { type = "idle" } })
+			reply(nil, { thread = fork })
+			local session = assert(state.sessions.fork)
+			job = session.job_id
+			assert(job > 0)
+			local function check()
+				assert(state.recents_tab == "active" and state.order[1].id == "fork")
+				assert(state.selected_id == "fork" and state.selected_ids.active == "fork")
+				assert(state.active_id == "fork" and vim.api.nvim_get_current_win() == state.chat_win)
+				assert(internals.status_name(state.threads.fork) == "ready")
+			end
+			check()
+			assert(not state.search_term and not state.search, "the fork must be visible outside the old filter")
+			assert(source_list.source == source and source.status.type == "active", "leave the source unchanged")
+			assert(session.default_status == "ready" and not session.initial_prompt)
+			assert(vim.wait(1000, function() return session.initial_load_complete end))
+			check()
+			assert(vim.api.nvim_win_get_buf(state.chat_win) == session.buf)
+			-- A poll started before the fork may omit it; its new terminal keeps it visible.
+			listing({ recent })
+			refresh()
+			check()
+			listing({ recent, fork })
+			refresh()
+			check()
+		end)
+		if job then
+			state.session_tokens[state.sessions.fork.notify_token] = nil
+			vim.fn.jobstop(job)
+			vim.fn.jobwait({ job }, 1000)
+		end
+		if state.preview_timer then
+			state.preview_timer:stop()
+			state.preview_timer:close()
+			state.preview_timer = nil
+		end
+		vim.cmd("stopinsert")
+		vim.cmd("tabclose!")
+		vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+		vim.api.nvim_buf_delete(state.placeholder_buf, { force = true })
+		assert(ok, err)
+	end)
+end
+
+test("failed and stale forks do not change the selected chat", function()
+	local reply, messages = nil, {}
+	state.backend = { fork_thread = function(_, _, callback) reply = callback end }
+	state.threads.source = thread("source")
+	state.selected_id = "source"
+	local original_notify = vim.notify
+	vim.notify = function(message) table.insert(messages, message) end
+	local ok, err = pcall(function()
+		internals.fork_selected()
+		reply("fork failed")
+		assert(not state.fork_pending.source and state.selected_id == "source")
+		assert(#messages == 1 and messages[1]:find("fork failed", 1, true))
+		internals.fork_selected()
+		state.project = { launch_cwd = "/other", worktrees = { { path = "/other" } } }
+		reply(nil, { thread = thread("fork") })
+		assert(not state.threads.fork and state.selected_id == "source")
+	end)
+	vim.notify = original_notify
+	assert(ok, err)
+end)
+
+test("fork and unsubscribe pass through the metadata transport", function()
+	local backend = Backend.new()
+	backend.start = function(_, callback) callback() end
+	backend.running = true
+	local sent, called, failure, result = {}, false, nil, nil
+	backend.process = { write = function(_, line)
+		table.insert(sent, vim.json.decode(line))
+	end }
+	backend:fork_thread("source", function(err, response)
+		called, failure, result = true, err, response
+	end)
+	assert(#sent == 1 and sent[1].method == "thread/fork", "fork must reach the transport")
+	assert(sent[1].params.threadId == "source")
+	backend:_feed_stdout(vim.json.encode({ id = sent[1].id, result = { thread = thread("fork") } }) .. "\n")
+	assert(vim.wait(1000, function() return #sent == 2 or called end))
+	assert(not called, "the fork must wait for unsubscribe")
+	assert(sent[2].method == "thread/unsubscribe" and sent[2].params.threadId == "fork")
+	backend:_feed_stdout(vim.json.encode({ id = sent[2].id, result = { status = "unsubscribed" } }) .. "\n")
+	assert(vim.wait(1000, function() return called end))
+	assert(not failure, failure)
+	assert(result.thread.id == "fork" and next(backend._pending) == nil)
+end)
+
+test("fork requests defer goals and release ownership before opening the terminal", function()
+	for _, scenario in ipairs({ "success", "fork-error", "invalid", "release-error" }) do
+		local backend = Backend.new()
+		backend.start = function(_, callback) callback() end
+		local release, called, failure
+		backend._request = function(_, method, params, callback)
+			if method == "thread/fork" then
+				assert(params.threadId == "source" and params.threadSource == "user")
+				assert(params.deferGoalContinuation and params.excludeTurns)
+				if scenario == "fork-error" then callback("fork failed"); return end
+				callback(nil, { thread = thread(scenario == "invalid" and "source" or "fork") })
+			elseif method == "thread/unsubscribe" then
+				assert(params.threadId == "fork")
+				release = callback
+			else
+				error("Unexpected request: " .. method)
+			end
+		end
+		backend:fork_thread("source", function(err, result)
+			called, failure = true, err
+			if not err then assert(result.thread.id == "fork") end
+		end)
+		if release then
+			assert(not called, "the CLI must wait until the metadata connection releases the fork")
+			release(scenario == "release-error" and "release failed" or nil)
+		end
+		assert(called and (failure ~= nil) == (scenario ~= "success"), scenario)
+	end
+end)
+
+test("moving a thread confirms its directory and releases ownership without forking history", function()
+	for _, scenario in ipairs({ "success", "busy", "writer-conflict", "update-error", "read-error", "release-error" }) do
+		local backend = Backend.new()
+		backend.start = function(_, callback) callback() end
+		backend.running = true
+		local sent, called, failure, moved = {}, false, nil, nil
+		backend.process = { write = function(_, line) table.insert(sent, vim.json.decode(line)) end }
+		backend:move_thread("source", "/repo/new-worktree", function(err, result)
+			called, failure, moved = true, err, result
+		end)
+		local cursor = 1
+		while not called do
+			assert(vim.wait(1000, function() return sent[cursor] ~= nil or called end))
+			if called then break end
+			local request = sent[cursor]
+			assert(request.params.threadId == "source")
+			local response = { id = request.id, result = {} }
+			if request.method == "thread/resume" then
+				assert(cursor == 1)
+				if scenario == "writer-conflict" then
+					response = { id = request.id, error = { code = -32600, message = "active writer" } }
+				else
+					response.result = { thread = { id = "source", turns = scenario == "busy"
+						and { { id = "running", status = "inProgress" } } or {} } }
+				end
+			elseif request.method == "thread/settings/update" then
+				assert(scenario ~= "busy" and request.params.cwd == "/repo/new-worktree")
+				if scenario == "update-error" then
+					response = { id = request.id, error = { code = -32600, message = "update failed" } }
+				end
+			elseif request.method == "thread/read" then
+				response.result = { thread = { id = "source", cwd = "/repo/new-worktree" } }
+				if scenario == "read-error" then
+					response = { id = request.id, error = { code = -32600, message = "read failed" } }
+				end
+			elseif request.method == "thread/unsubscribe" then
+				assert(not called, "wait for release before reopening")
+				if scenario == "release-error" then
+					response = { id = request.id, error = { code = -32600, message = "release failed" } }
+				end
+			else
+				error("Unexpected request: " .. request.method)
+			end
+			backend:_feed_stdout(vim.json.encode(response) .. "\n")
+			cursor = cursor + 1
+		end
+		assert((failure ~= nil) == (scenario ~= "success"), scenario)
+		assert(sent[#sent].method == (scenario == "writer-conflict" and "thread/resume" or "thread/unsubscribe"))
+		if scenario == "success" then assert(moved.id == "source" and moved.cwd == "/repo/new-worktree") end
+	end
+end)
+
+test("moving waits for asynchronous directory publication before releasing the writer", function()
+	local backend = Backend.new()
+	backend.start = function(_, callback) callback() end
+	local retry, released, completed, reads = nil, false, false, 0
+	local defer = vim.defer_fn
+	vim.defer_fn = function(callback) retry = callback end
+	backend._request = function(_, method, _, callback)
+		if method == "thread/resume" then
+			callback(nil, { thread = { turns = {} } })
+		elseif method == "thread/read" then
+			reads = reads + 1
+			callback(nil, { thread = { id = "source", cwd = reads == 1 and "/old" or "/new" } })
+		else
+			released = method == "thread/unsubscribe"
+			callback(nil, {})
+		end
+	end
+	backend:move_thread("source", "/new", function(err) assert(not err, err); completed = true end)
+	assert(retry and not completed and not released)
+	retry()
+	vim.defer_fn = defer
+	assert(completed and released and reads == 2)
+end)
+
 local ui_status = assert(internals.terminal_ui_status)
 local finish_load = assert(internals.finish_initial_load)
 local attach_activity = assert(internals.attach_terminal_activity)
@@ -483,6 +731,62 @@ for _, fresh in ipairs({ true, false }) do
 	end)
 end
 
+for _, tab in ipairs({ "active", "dismissed" }) do
+	test(tab .. " recents keep the header fixed and paginate keyboard navigation", function()
+		vim.cmd("tabnew")
+		state.sidebar_win = vim.api.nvim_get_current_win()
+		state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_win_set_buf(state.sidebar_win, state.sidebar_buf)
+		internals.set_window_options(state.sidebar_win, true)
+		state.recents_tab = tab
+		local source = tab == "active" and state.threads or state.dismissed_threads
+		for index = 1, 1003 do
+			local id = tostring(index)
+			source[id] = thread(id, "Conversation " .. id, { updatedAt = 2000 - index })
+		end
+		internals.sort_threads()
+		internals.sidebar_mappings()
+		local ok, err = pcall(function()
+			internals.render_sidebar()
+			local header = vim.wo[state.sidebar_win].winbar
+			local function check_selection(expected)
+				vim.cmd("redraw")
+				assert(state.selected_id == tostring(expected))
+				local row = assert(state.cursor_rows[state.selected_id])
+				assert(vim.api.nvim_win_get_cursor(state.sidebar_win)[1] == row)
+				assert(vim.fn.line("w0") <= row and row <= vim.fn.line("w$"), "selection must stay visible")
+				assert(vim.tbl_count(state.cursor_rows) <= 20, "rendering must stay bounded for long lists")
+				assert(vim.api.nvim_buf_line_count(state.sidebar_buf) < 120)
+				assert(vim.wo[state.sidebar_win].winbar == header, "scrolling must preserve the fixed header")
+				local rendered = vim.api.nvim_eval_statusline(header, { winid = state.sidebar_win, use_winbar = true }).str
+				assert(rendered:find("Active", 1, true) and rendered:find("Dismissed", 1, true))
+				assert(not table.concat(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false), "\n")
+					:find("Dismissed", 1, true), "header must be outside the scrolling buffer")
+			end
+			check_selection(1)
+			for index = 2, 26 do
+				vim.fn.maparg("j", "n", false, true).callback()
+				check_selection(index)
+			end
+			assert(vim.wo[state.sidebar_win].statusline:find("21–40 of 1003", 1, true))
+			for index = 25, 1, -1 do
+				vim.fn.maparg("k", "n", false, true).callback()
+				check_selection(index)
+			end
+			vim.fn.maparg("G", "n", false, true).callback()
+			check_selection(1003)
+			assert(vim.tbl_count(state.cursor_rows) == 3, "the final partial page must include the last chat")
+			internals.select_sidebar_row(state.cursor_rows["1001"])
+			check_selection(1001)
+			vim.fn.maparg("gg", "n", false, true).callback()
+			check_selection(1)
+		end)
+		vim.cmd("tabclose!")
+		vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+		assert(ok, err)
+	end)
+end
+
 test("empty recents stay stable during refreshes of either tab", function()
 	state.opts.sidebar_width = 40
 	state.sidebar_buf = vim.api.nvim_create_buf(false, true)
@@ -497,7 +801,7 @@ test("empty recents stay stable during refreshes of either tab", function()
 				state.search_term = search or nil
 				internals.render_sidebar()
 				local before = vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)
-				assert(before[search and 6 or 4] == "  No " .. (search and "matching " or "") .. tab .. " conversations")
+				assert(before[search and 4 or 2] == "  No " .. (search and "matching " or "") .. tab .. " conversations")
 				local function unchanged()
 					internals.render_sidebar()
 					assert(vim.deep_equal(before, vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)))
@@ -818,6 +1122,118 @@ test("a reopened saved chat retains one row across follow-ups and delayed refres
 	end
 end)
 
+for _, review in ipairs({
+	{ name = "base branch", prompt = "Review the code changes against the base branch 'develop'." },
+	{ name = "uncommitted changes", prompt = "Review the current code changes (staged, unstaged, and untracked files)." },
+	{ name = "commit", prompt = "Review the changes introduced by commit abc123." },
+	{ name = "custom instructions", prompt = "Check whether the new cache preserves permissions." },
+}) do
+	test("/review with " .. review.name .. " replaces its temporary row while working", function()
+		local session = pending("pending-review", "/review")
+		state.active_id, state.selected_id = session.key, session.key
+		state.selected_ids.active = session.key
+		local saved = thread("review", review.prompt, { status = { type = "active" } })
+		listing({ saved })
+		local reads = 0
+		state.backend.read_thread = function(_, id, callback, options)
+			reads = reads + 1
+			assert(id == "review" and not (options and options.summary_only))
+			callback(nil, { thread = vim.tbl_extend("force", saved, {
+				turns = { { items = { { type = "enteredReviewMode", review = review.name } } } },
+			}) })
+		end
+		refresh()
+		assert(session.id == "review" and #state.order == 1)
+		assert(not state.threads["pending-review"] and state.sessions.review == session)
+		assert(state.active_id == "review" and state.selected_ids.active == "review")
+		assert(status_name(state.order[1]) == "working")
+		refresh()
+		assert(#state.order == 1 and reads == 1, "bound reviews need no further history reads")
+	end)
+end
+
+test("typing /review in a fresh terminal preserves identity through picker confirmation", function()
+	local session = pending("pending-review")
+	session.initial_prompt = nil
+	session.buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_set_current_buf(session.buf)
+	internals.configure_terminal_buffer(session)
+	local enter
+	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(session.buf, "t")) do
+		if mapping.lhs == "<CR>" then enter = mapping.callback end
+	end
+	for _, line in ipairs({ "› /review", "› Review against a base branch", "› develop" }) do
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { line })
+		vim.api.nvim_win_set_cursor(0, { 1, #line - 1 })
+		assert(enter)()
+		assert(session.initial_prompt == "/review")
+	end
+end)
+
+test("review identity ignores unrelated chats and excludes old, known, and other-project rows", function()
+	local session = pending("pending-review", "/review")
+	session.known_ids.known = true
+	listing({
+		thread("ordinary", "Review the code changes against the base branch 'develop'."),
+		thread("old", nil, { createdAt = 90 }), thread("known"),
+		thread("elsewhere", nil, { cwd = "/another-project" }),
+	})
+	local reads = 0
+	state.backend.read_thread = function(_, id, callback)
+		reads = reads + 1
+		assert(id == "ordinary")
+		callback(nil, { thread = thread(id, nil, { turns = {
+			{ items = { { type = "userMessage" } } },
+			{ items = { { type = "enteredReviewMode" } } },
+		} }) })
+	end
+	refresh()
+	assert(not session.id and reads == 1, "only a review in the first turn is identity evidence")
+end)
+
+test("simultaneous reviews stay ambiguous without displaying duplicate saved rows", function()
+	local first = pending("pending-first", "/review")
+	local second = pending("pending-second", "/review")
+	listing({ thread("first", "First custom review"), thread("second", "Second custom review") })
+	local callbacks = {}
+	state.backend.read_thread = function(_, id, callback) callbacks[id] = callback end
+	refresh()
+	assert(state.refreshing)
+	callbacks.second(nil, { thread = thread("second", nil, {
+		turns = { { items = { { type = "enteredReviewMode" } } } },
+	}) })
+	assert(state.refreshing and not first.id and not second.id)
+	callbacks.first(nil, { thread = thread("first", nil, {
+		turns = { { items = { { type = "enteredReviewMode" } } } },
+	}) })
+	assert(not state.refreshing and not first.id and not second.id)
+	assert(#state.order == 2 and not state.threads.first and not state.threads.second)
+end)
+
+test("review lookup failures retry and delayed responses respect project changes", function()
+	local session = pending("pending-review", "/review")
+	listing({ thread("review", "Custom review") })
+	local callback
+	state.backend.read_thread = function(_, _, cb) callback = cb end
+	refresh()
+	callback("not yet persisted")
+	assert(not state.refreshing and not session.id)
+	refresh()
+	state.project = { launch_cwd = "/elsewhere", worktrees = { { path = "/elsewhere" } } }
+	callback(nil, { thread = thread("review", nil, {
+		turns = { { items = { { type = "enteredReviewMode" } } } },
+	}) })
+	assert(not state.refreshing and not session.id)
+	state.project = { launch_cwd = "/repo", worktrees = { { path = "/repo" } } }
+	refresh()
+	callback(nil, { thread = thread("review", nil, {
+		turns = { { items = { { type = "enteredReviewMode" } } } },
+	}) })
+	assert(session.id == "review" and #state.order == 1)
+	-- Drain the refresh queued by the project change before replacing its backend.
+	vim.wait(10, function() return false end)
+end)
+
 test("title changes update the existing row after switching away", function()
 	local session = pending("pending-1")
 	state.active_id = "another-chat"
@@ -1033,7 +1449,7 @@ for _, scenario in ipairs({
 		end
 		vim.cmd("stopinsert")
 		internals.hide_composer()
-		vim.cmd("tabclose!")
+		mode.leave()
 		internals.restore_sidebar_cursor()
 		for _, buf in ipairs(buffers) do
 			if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
@@ -1213,7 +1629,7 @@ test("interrupt requests stop the live turn and tolerate completion races", func
 	end
 end)
 
-test("individual dismissal interrupts before closing the terminal and archiving", function()
+test("queued dismissal keeps the terminal alive until completion, then closes before archiving", function()
 	state.chat_win = vim.api.nvim_get_current_win()
 	state.opts.command = { vim.fn.exepath("sh"), "-c", "sleep 30" }
 	local chat = thread("chat", nil, { status = { type = "active" } })
@@ -1235,6 +1651,9 @@ test("individual dismissal interrupts before closing the terminal and archiving"
 	}
 	local ok, err = pcall(function()
 		internals.dismiss_thread(chat)
+		assert(chat._dismiss_queued and not interrupt_reply and not session.closing)
+		assert(vim.fn.jobwait({ job }, 0)[1] == -1)
+		internals.handle_backend_notification("thread/status/changed", { threadId = "chat", status = { type = "idle" } })
 		assert(interrupt_reply and not archived and not session.closing)
 		assert(state.dismiss_pending.chat)
 		interrupt_reply(nil)
@@ -1246,7 +1665,7 @@ test("individual dismissal interrupts before closing the terminal and archiving"
 end)
 
 test("failed interruption restores the active row without closing or archiving", function()
-	local chat = thread("chat", nil, { status = { type = "active" } })
+	local chat = thread("chat", nil, { status = { type = "idle" } })
 	state.threads.chat = chat
 	state.backend = {
 		interrupt_thread = function(_, _, callback) callback("could not interrupt") end,
@@ -1257,7 +1676,7 @@ test("failed interruption restores the active row without closing or archiving",
 	assert(not state.dismiss_pending.chat and not chat._dismissed)
 end)
 
-test("dismiss all continues to skip working tasks", function()
+test("dismiss all queues working tasks while dismissing idle tasks", function()
 	local working = thread("working", nil, { status = { type = "active" } })
 	local idle = thread("idle", nil, { status = { type = "idle" } })
 	state.threads = { working = working, idle = idle }
@@ -1274,21 +1693,281 @@ test("dismiss all continues to skip working tasks", function()
 	assert(ok, err)
 	assert(vim.wait(1000, function() return archived == "idle" end))
 	assert(state.threads.working == working and not state.dismissed_threads.working)
+	assert(working._dismiss_queued)
 end)
 
-test("a dismissed pending task is interrupted as soon as its identity binds", function()
+for _, first in ipairs({ "d", "D" }) do
+	for _, second in ipairs({ "d", "D" }) do
+		test(first .. " queues working recents and " .. second .. " cancels dismissal", function()
+			local chat = thread("chat", nil, { status = { type = "active" } })
+			state.threads.chat = chat
+			state.opts.sidebar_width = 60
+			state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+			internals.sidebar_mappings()
+			internals.sort_threads()
+			local function press(key)
+				vim.api.nvim_buf_call(state.sidebar_buf, function()
+					vim.fn.maparg(key, "n", false, true).callback()
+				end)
+			end
+			local function queued_label()
+				for _, line in ipairs(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)) do
+					if line:find("Queued to dismiss", 1, true) then
+						assert(line:match("Working .*Queued to dismiss$"), "queue label must end the status line")
+						return true
+					end
+				end
+			end
+			press(first)
+			assert(chat._dismiss_queued and not chat._dismissed and not state.dismiss_pending.chat)
+			assert(queued_label(), "queued rows need a visible label")
+			press(second)
+			assert(not chat._dismiss_queued and state.threads.chat == chat)
+			assert(not queued_label(), "cancelling must remove the label")
+			internals.handle_backend_notification("thread/status/changed", { threadId = "chat", status = { type = "idle" } })
+			assert(state.threads.chat == chat, "cancelled dismissal must survive completion")
+			vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+		end)
+	end
+end
+
+for _, ending in ipairs({ "idle", "systemError" }) do
+	test("queued dismissal waits through pauses and finishes on " .. ending, function()
+		local chat = thread("chat", nil, { status = { type = "active" } })
+		state.threads.chat = chat
+		local archived, interrupts = 0, 0
+		state.backend = {
+			interrupt_thread = function(_, _, callback) interrupts = interrupts + 1; callback(nil) end,
+			archive_thread = function(_, _, callback) archived = archived + 1; callback(nil) end,
+		}
+		internals.dismiss_thread(chat)
+		for _, flag in ipairs({ "waitingOnApproval", "waitingOnUserInput" }) do
+			internals.handle_backend_notification("thread/status/changed", {
+				threadId = "chat", status = { type = "active", activeFlags = { flag } },
+			})
+			assert(chat._dismiss_queued and state.threads.chat == chat and interrupts == 0)
+		end
+		internals.handle_backend_notification("thread/status/changed", { threadId = "chat", status = { type = ending } })
+		assert(not state.threads.chat and state.dismissed_threads.chat == chat)
+		assert(not chat._dismiss_queued)
+		assert(vim.wait(1000, function() return archived == 1 end))
+		internals.handle_backend_notification("thread/status/changed", { threadId = "chat", status = { type = ending } })
+		assert(interrupts == 1, "duplicate completion must not dismiss twice")
+	end)
+end
+
+test("refresh preserves the queue and dismisses completed chats hidden by a filter", function()
+	state.threads.chat = thread("chat", nil, { status = { type = "active" } })
+	internals.dismiss_thread(state.threads.chat)
+	listing({ thread("chat", nil, { status = { type = "active" } }) })
+	refresh()
+	assert(state.threads.chat._dismiss_queued)
+	listing({ thread("chat", nil, { status = { type = "notLoaded" } }) })
+	refresh()
+	assert(state.threads.chat._dismiss_queued, "unloaded snapshots are not completion")
+	state.search_term = "no matching conversations"
+	listing({ thread("chat", nil, { status = { type = "idle" } }) })
+	local archived
+	state.backend.interrupt_thread = function(_, _, callback) callback(nil) end
+	state.backend.archive_thread = function(_, id, callback) archived = id; callback(nil) end
+	refresh()
+	assert(not state.threads.chat and state.dismissed_threads.chat)
+	assert(vim.wait(1000, function() return archived == "chat" end))
+end)
+
+test("queued pending tasks retain the queue when their identity binds", function()
 	local session = pending("pending-1")
+	session.default_status = "working"
 	local interrupted, archived
 	state.backend = {
 		interrupt_thread = function(_, id, callback) interrupted = id; callback(nil) end,
 		archive_thread = function(_, id, callback) archived = id; callback(nil) end,
 	}
 	internals.dismiss_thread(state.threads[session.key])
-	assert(session.dismiss_when_bound and not interrupted)
-	internals.bind_session(session, thread("canonical"), true)
+	assert(state.threads[session.key]._dismiss_queued and not interrupted)
+	local canonical = thread("canonical", nil, { status = { type = "active" } })
+	state.threads.canonical = canonical
+	internals.bind_session(session, canonical, true)
+	assert(canonical._dismiss_queued and not interrupted and not state.threads["pending-1"])
+	internals.handle_backend_notification("thread/status/changed", { threadId = "canonical", status = { type = "idle" } })
 	assert(interrupted == "canonical")
 	assert(vim.wait(1000, function() return archived == "canonical" end))
 	assert(not state.sessions.canonical and state.dismissed_threads.canonical)
+end)
+
+test("saved collaboration mode includes interrupted turns and explicit settings changes", function()
+	local path = vim.fn.tempname()
+	local saved = thread("saved", nil, { path = path })
+	local function append(item)
+		vim.fn.writefile({ vim.json.encode(item) }, path, "a")
+	end
+	append({ type = "session_meta", payload = { id = "saved" } })
+	append({ type = "turn_context", payload = { collaboration_mode = { mode = "plan" } } })
+	append({ type = "event_msg", payload = { type = "turn_aborted" } })
+	assert(Backend.saved_plan_mode(saved) == true)
+	append({ type = "event_msg", payload = { type = "thread_settings_applied",
+		thread_settings = { collaboration_mode = { mode = "default" } } } })
+	assert(Backend.saved_plan_mode(saved) == false, "an explicit mode change wins over the last turn")
+	append({ type = "event_msg", payload = { type = "task_started", collaboration_mode_kind = "plan" } })
+	vim.fn.writefile({ '{"type":"turn_context","payload":' }, path, "a")
+	assert(Backend.saved_plan_mode(saved) == true, "a partial final record must not erase saved mode")
+	assert(Backend.saved_plan_mode(thread("other", nil, { path = path })) == nil)
+	vim.fn.delete(path)
+	assert(Backend.saved_plan_mode(saved) == nil)
+end)
+
+test("reopening a plan chat restores its mode before revealing the composer", function()
+	local path = vim.fn.tempname()
+	vim.fn.writefile({
+		vim.json.encode({ type = "session_meta", payload = { id = "chat" } }),
+		vim.json.encode({ type = "turn_context", payload = { collaboration_mode = { mode = "plan" } } }),
+	}, path)
+	state.threads.chat = thread("chat", nil, { path = path })
+	state.chat_win = vim.api.nvim_get_current_win()
+	state.opts.command = "fake-codex"
+	local original_start, original_wait, original_send = vim.fn.jobstart, vim.fn.jobwait, vim.api.nvim_chan_send
+	local sent = {}
+	vim.fn.jobstart = function() return 987 end
+	vim.fn.jobwait = function() return { -1 } end
+	vim.api.nvim_chan_send = function(_, text) table.insert(sent, text) end
+	local ok, err = pcall(function()
+		local session = internals.create_terminal("chat", "/repo", "chat", "chat")
+		assert(session.restore_plan_mode)
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything", "  ? for shortcuts" })
+		assert(vim.wait(1000, function() return #sent == 1 end))
+		assert(sent[1] == "\27[Z" and not session.initial_load_complete)
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything", "  Plan mode (shift+tab to cycle)" })
+		assert(vim.wait(1000, function() return session.initial_load_complete end))
+		assert(#sent == 1 and not session.restore_plan_mode)
+
+		-- A CLI that already restores Plan must not get toggled back to Default.
+		state.session_tokens[session.notify_token] = nil
+		state.sessions.chat = nil
+		vim.api.nvim_buf_delete(session.buf, { force = true })
+		session = internals.create_terminal("chat", "/repo", "chat", "chat")
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything", "  Plan mode" })
+		assert(vim.wait(1000, function() return session.initial_load_complete end))
+		assert(#sent == 1, "restoration is idempotent")
+
+		-- An explicit local switch wins even if the saved turn is still Plan.
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything", "  ? for shortcuts" })
+		vim.fn.jobwait = function() return { 0 } end
+		session = internals.create_terminal("chat", "/repo", "chat", "chat")
+		vim.fn.jobwait = function() return { -1 } end
+		assert(session.plan_mode == false and not session.restore_plan_mode)
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything", "  ? for shortcuts" })
+		assert(vim.wait(1000, function() return session.initial_load_complete end))
+		assert(#sent == 1, "do not undo an explicit switch to Default")
+	end)
+	vim.fn.jobstart, vim.fn.jobwait, vim.api.nvim_chan_send = original_start, original_wait, original_send
+	vim.fn.delete(path)
+	assert(ok, err)
+end)
+
+test("mode detection ignores transcript text and native dialogs", function()
+	local session = terminal_session({ "Plan mode", "› Ask Codex to do anything", "  ? for shortcuts" })
+	assert(internals.terminal_plan_mode(session) == false)
+	vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything" })
+	assert(internals.terminal_plan_mode(session) == nil, "wait for the footer")
+	vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› 1. Plan mode", "  Enter to select" })
+	assert(internals.terminal_plan_mode(session) == nil)
+end)
+
+local function with_initial_prompt(callback)
+	local original_wait, original_send, original_defer = vim.fn.jobwait, vim.api.nvim_chan_send, vim.defer_fn
+	local sent, scheduled = {}, {}
+	local running = true
+	vim.fn.jobwait = function() return { running and -1 or 0 } end
+	vim.api.nvim_chan_send = function(_, text) table.insert(sent, text) end
+	vim.defer_fn = function(fn, delay) table.insert(scheduled, { fn = fn, delay = delay }) end
+	local ok, err = pcall(function()
+		local session = terminal_session({ "› Ask Codex to do anything", "  ? for shortcuts" })
+		session.job_id = 987
+		local function step(lines)
+			if lines then vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, lines) end
+			local next_step = assert(table.remove(scheduled, 1), "expected a pending startup callback")
+			next_step.fn()
+		end
+		callback(session, sent, scheduled, step, function() running = false end)
+	end)
+	vim.fn.jobwait, vim.api.nvim_chan_send, vim.defer_fn = original_wait, original_send, original_defer
+	assert(ok, err)
+end
+
+test("new plan chats wait for the mode switch before sending the first prompt", function()
+	with_initial_prompt(function(session, sent, scheduled, step)
+		session.plan_mode = true
+		internals.wait_for_composer(session, "investigate\nthe race", 0)
+		assert(#sent == 1 and sent[1] == "\27[Z")
+		for _ = 1, 5 do
+			step()
+			assert(#sent == 1, "a slow mode switch must not send the prompt or toggle again")
+		end
+		step({ "› Ask Codex to do anything", "  Plan mode" })
+		assert(#sent == 2 and sent[2] == "\27[200~investigate\nthe race\27[201~")
+		assert(#scheduled == 1 and scheduled[1].delay >= 250, "separate paste and submit")
+		internals.wait_for_composer(session, "investigate\nthe race", 0)
+		assert(#sent == 2 and #scheduled == 1, "send the initial prompt only once")
+		step()
+		assert(#sent == 3 and sent[3] == "\r" and #scheduled == 0)
+	end)
+end)
+
+test("new plan chats wait for a footer and preserve an already selected Plan mode", function()
+	with_initial_prompt(function(session, sent, _, step)
+		session.plan_mode = true
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› Ask Codex to do anything" })
+		internals.wait_for_composer(session, "hello", 0)
+		assert(#sent == 0, "the composer can render before the mode footer")
+		step({ "› Ask Codex to do anything", "  Plan mode" })
+		assert(#sent == 1 and sent[1] == "\27[200~hello\27[201~", "do not toggle Plan back to Default")
+		step()
+		assert(#sent == 2 and sent[2] == "\r")
+	end)
+end)
+
+test("new chat startup waits for native menus and cancels submission when the CLI exits", function()
+	with_initial_prompt(function(session, sent, scheduled, step, stop)
+		vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { "› 1. Trust this directory", "  Enter to select" })
+		internals.wait_for_composer(session, "hello", 0)
+		assert(#sent == 0)
+		step({ "› Ask Codex to do anything", "  ? for shortcuts" })
+		assert(#sent == 1 and sent[1] == "\27[200~hello\27[201~")
+		stop()
+		step()
+		assert(#sent == 1 and #scheduled == 0)
+	end)
+end)
+
+test("interrupted inline plan prompts bind without a completion notification", function()
+	local session = pending("pending-1", "/plan investigate the race")
+	state.active_id, state.selected_id = session.key, session.key
+	listing({ thread("saved", "", { status = { type = "active" } }) })
+	refresh()
+	assert(#state.order == 1 and state.order[1].id == "pending-1", "do not publish an unidentified empty preview")
+	listing({ thread("saved", "investigate the race", { status = { type = "idle" } }) })
+	refresh()
+	assert(session.id == "saved" and #state.order == 1 and not state.threads["pending-1"])
+	refresh()
+	assert(#state.order == 1 and state.active_id == "saved")
+end)
+
+test("typing an inline plan prompt retains identity before interruption", function()
+	local session = pending("pending-1")
+	session.initial_prompt = nil
+	session.initial_load_complete = true
+	session.buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_set_current_buf(session.buf)
+	local prompt = "› /plan investigate the race"
+	vim.api.nvim_buf_set_lines(session.buf, 0, -1, false, { prompt })
+	vim.api.nvim_win_set_cursor(0, { 1, #prompt - 1 })
+	internals.configure_terminal_buffer(session)
+	for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(session.buf, "t")) do
+		if mapping.lhs == "<CR>" then mapping.callback() end
+	end
+	listing({ thread("saved", "investigate the race", { status = { type = "idle" } }) })
+	refresh()
+	assert(session.id == "saved" and #state.order == 1)
 end)
 
 reset()

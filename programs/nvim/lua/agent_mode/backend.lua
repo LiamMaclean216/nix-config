@@ -89,6 +89,54 @@ end
 
 Backend.user_visible_thread = user_visible_thread
 
+-- thread/read omits collaboration settings, and the remote TUI's resume
+-- response currently drops them too. Read the persisted settings without
+-- resuming the thread or acquiring its writer lease.
+function Backend.saved_plan_mode(thread)
+	if not thread or type(thread.path) ~= "string" then
+		return nil
+	end
+	local file = io.open(thread.path, "r")
+	if not file then
+		return nil
+	end
+	local mode
+	local ok = pcall(function()
+		local first = file:read("*l")
+		local meta = first and vim.json.decode(first)
+		if not meta or meta.type ~= "session_meta" or meta.payload.id ~= thread.id then
+			return
+		end
+		for line in file:lines() do
+			-- Avoid decoding message/tool bodies, which can be very large.
+			if line:match('"type"%s*:%s*"turn_context"')
+				or line:match('"type"%s*:%s*"thread_settings_applied"')
+				or line:match('"type"%s*:%s*"task_started"')
+				or line:match('"type"%s*:%s*"turn_started"')
+			then
+				local decoded, item = pcall(vim.json.decode, line)
+				if decoded and type(item) == "table" and type(item.payload) == "table" then
+					local payload = item.payload
+					local settings = item.type == "turn_context" and payload
+						or (item.type == "event_msg" and payload.type == "thread_settings_applied"
+							and payload.thread_settings)
+					local kind = settings and settings.collaboration_mode and settings.collaboration_mode.mode
+					if item.type == "event_msg" and (payload.type == "task_started" or payload.type == "turn_started") then
+						kind = payload.collaboration_mode_kind
+					end
+					if kind == "plan" or kind == "default" then
+						mode = kind == "plan"
+					end
+				end
+			end
+		end
+	end)
+	file:close()
+	if ok then
+		return mode
+	end
+end
+
 function Backend.new(opts)
 	opts = opts or {}
 
@@ -222,6 +270,10 @@ function Backend:_request(method, params, callback)
 		and method ~= "thread/read"
 		and method ~= "thread/archive"
 		and method ~= "thread/unarchive"
+		and method ~= "thread/fork"
+		and method ~= "thread/resume"
+		and method ~= "thread/settings/update"
+		and method ~= "thread/unsubscribe"
 		and method ~= "turn/interrupt"
 	then
 		self:_defer(callback, "Unsupported metadata request: " .. tostring(method))
@@ -237,7 +289,7 @@ function Backend:_request(method, params, callback)
 	}
 	self._pending[key] = request
 	request.timer = vim.uv.new_timer()
-	local timeout = method == "initialize" and 45000 or self.request_timeout
+	local timeout = method == "initialize" and 60000 or self.request_timeout
 	request.timer:start(timeout, 0, vim.schedule_wrap(function()
 		if self._pending[key] ~= request then
 			return
@@ -633,6 +685,38 @@ function Backend:search_threads(params, callback)
 	fetch_threads(self, "thread/search", params, callback)
 end
 
+function Backend:fork_thread(thread_id, callback)
+	if not thread_id or thread_id == "" then
+		self:_defer(callback, "A thread ID is required")
+		return
+	end
+	self:start(function(err)
+		if err then
+			self:_defer(callback, err)
+			return
+		end
+		self:_request("thread/fork", {
+			threadId = thread_id,
+			threadSource = "user",
+			deferGoalContinuation = true,
+			excludeTurns = true,
+		}, function(fork_err, result)
+			local thread = result and normalize(result.thread)
+			if fork_err or type(thread) ~= "table" or type(thread.id) ~= "string"
+				or thread.id == "" or thread.id == thread_id
+			then
+				callback(fork_err or "Codex thread/fork returned an invalid thread")
+				return
+			end
+			-- Hand the fork to its interactive terminal instead of retaining this
+			-- metadata connection's subscription and writer ownership.
+			self:_request("thread/unsubscribe", { threadId = thread.id }, function(release_err)
+				callback(release_err, result)
+			end)
+		end)
+	end)
+end
+
 function Backend:read_thread(thread_id, callback, options)
 	if not thread_id or thread_id == "" then
 		self:_defer(callback, "A thread ID is required")
@@ -661,6 +745,56 @@ local function active_turn_id(result)
 			return turn.id
 		end
 	end
+end
+
+function Backend:move_thread(thread_id, cwd, callback)
+	self:start(function(err)
+		if err then
+			callback(err)
+			return
+		end
+		-- Acquire the writer after the local terminal closes. A writer in another
+		-- client must reject this request rather than have its directory changed.
+		self:_request("thread/resume", { threadId = thread_id }, function(resume_err, result)
+			if resume_err then
+				callback(resume_err)
+				return
+			end
+			local function release(move_err, moved)
+				self:_request("thread/unsubscribe", { threadId = thread_id }, function(release_err)
+					callback(move_err or release_err, moved)
+				end)
+			end
+			local turn_id, read_err = active_turn_id(result)
+			if read_err or turn_id then
+				release(read_err or "Wait for this conversation to finish working before moving it")
+				return
+			end
+			self:_request("thread/settings/update", { threadId = thread_id, cwd = cwd }, function(update_err)
+				if update_err then
+					release(update_err)
+					return
+				end
+				-- Settings publication is asynchronous; wait for the effective cwd
+				-- before releasing ownership and reconnecting the terminal.
+				local function confirm(attempt)
+					self:read_thread(thread_id, function(read_error, updated)
+						local moved = updated and updated.thread
+						if read_error then
+							release(read_error)
+						elseif moved and moved.cwd == cwd then
+							release(nil, moved)
+						elseif attempt >= 20 then
+							release("Codex did not confirm the new working directory")
+						else
+							vim.defer_fn(function() confirm(attempt + 1) end, 100)
+						end
+					end, { summary_only = true })
+				end
+				confirm(1)
+			end)
+		end)
+	end)
 end
 
 function Backend:interrupt_thread(thread_id, callback)
