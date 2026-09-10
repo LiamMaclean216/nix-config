@@ -172,5 +172,6 @@ in {
     ./desktop/waybar.nix
     ./desktop/mako.nix
     ./desktop/screen-record.nix
+    ./desktop/voice-input.nix
   ];
 }

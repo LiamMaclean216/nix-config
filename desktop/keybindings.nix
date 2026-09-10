@@ -71,10 +71,6 @@ in {
         "$mainMod CTRL, R, movetoworkspacesilent, 4"
         "$mainMod CTRL, T, movetoworkspacesilent, 5"
 
-        # side buttons: copy and paste in the focused application
-        ", mouse:275, exec, ${pkgs.wtype}/bin/wtype -M ctrl -M shift -k c -m shift -m ctrl"
-        ", mouse:276, exec, ${pkgs.wtype}/bin/wtype -M ctrl -M shift -k v -m shift -m ctrl"
-
         # toggle floating on the focused window
         "$mainMod, g, togglefloating"
 
