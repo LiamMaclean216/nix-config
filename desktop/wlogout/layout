@@ -1,22 +1,25 @@
 {
     "label" : "reboot",
+    "text" : "Restart",
     "action" : "systemctl reboot || loginctl reboot",
     "keybind" : "r"
 }
 
 {
     "label" : "logout",
+    "text" : "Log out",
     "action" : "pkill Hyprland || pkill sway || pkill niri || loginctl terminate-user $USER",
     "keybind" : "e"
 }
 {
     "label" : "shutdown",
+    "text" : "Shut down",
     "action" : "systemctl poweroff || loginctl poweroff",
     "keybind" : "s"
 }
 {
     "label" : "windows",
     "action" : "systemctl reboot --boot-loader-entry=auto-windows",
-    "text" : "",
+    "text" : "Windows",
     "keybind" : "w"
 }

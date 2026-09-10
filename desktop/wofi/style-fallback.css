@@ -1,0 +1,3 @@
+@import url("style.css");
+/* Readable during the upgrade session or when the compositor plugin is absent. */
+window { background-color: @background; }

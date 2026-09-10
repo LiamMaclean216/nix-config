@@ -1,5 +1,9 @@
 {lib, stdenvNoCC, python3, wrapGAppsHook3, gtk3, gtk-layer-shell, gobject-introspection, pipewire, wl-clipboard, hyprland, libnotify}:
 let
+  theme = import ../theme.nix;
+  themeJson = builtins.toFile "voice-input-theme.json" (builtins.toJSON {
+    inherit (theme) colors radius font;
+  });
   python = python3.withPackages (ps: [ps.pygobject3 ps.websockets]);
 in stdenvNoCC.mkDerivation {
   pname = "voice-input";
@@ -12,6 +16,7 @@ in stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/share/voice-input
     cp voice_input.py overlay.py $out/share/voice-input/
+    cp ${themeJson} $out/share/voice-input/theme.json
     makeWrapper ${python}/bin/python $out/bin/voice-input \
       --add-flags "$out/share/voice-input/voice_input.py" \
       --prefix PATH : ${lib.makeBinPath [pipewire wl-clipboard hyprland libnotify]} \

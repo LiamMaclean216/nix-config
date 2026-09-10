@@ -18,13 +18,11 @@ in {
     Install.WantedBy = ["graphical-session.target"];
   };
 
-  wayland.windowManager.hyprland.settings = {
-    # Mouse 5 = BTN_EXTRA. Ignore modifiers so releasing Shift mid-dictation
-    # cannot leave the microphone running. Do not enable these on the lock screen.
-    bindi = [", mouse:276, exec, ${voiceInput}/bin/voice-input start"];
-    bindri = [", mouse:276, exec, ${voiceInput}/bin/voice-input stop"];
-    # Pass Escape through so it keeps its normal behavior in applications.
-    bindn = [", Escape, exec, ${voiceInput}/bin/voice-input cancel"];
-    bind = ["$mainMod SHIFT, Escape, exec, ${voiceInput}/bin/voice-input cancel"];
-  };
+  xdg.configFile."hypr/hyprland.lua".text = ''
+    -- Ignore modifiers, but never record from the lock screen.
+    hl.bind("mouse:276", hl.dsp.exec_cmd("${voiceInput}/bin/voice-input start"), { ignore_mods = true })
+    hl.bind("mouse:276", hl.dsp.exec_cmd("${voiceInput}/bin/voice-input stop"), { ignore_mods = true, release = true })
+    hl.bind("Escape", hl.dsp.exec_cmd("${voiceInput}/bin/voice-input cancel"), { non_consuming = true })
+    hl.bind("SUPER + SHIFT + Escape", hl.dsp.exec_cmd("${voiceInput}/bin/voice-input cancel"))
+  '';
 }

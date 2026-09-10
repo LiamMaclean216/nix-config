@@ -7,6 +7,7 @@ import fcntl
 import getpass
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -109,6 +110,25 @@ async def focused_window():
     return json.loads(await command("hyprctl", "activewindow", "-j")).get("address")
 
 
+async def send_shortcut(modifiers, key, target):
+    # Only compositor addresses and fixed key names enter the Lua expression;
+    # dictated text travels exclusively through wl-copy's stdin.
+    if not isinstance(target, str) or not re.fullmatch(r"0x[0-9a-fA-F]+", target):
+        raise DictationError("No valid focused window; text was not inserted.")
+    dispatcher = (
+        "hl.dsp.send_shortcut({"
+        f"mods = {json.dumps(modifiers)}, key = {json.dumps(key)}, "
+        f'window = "address:{target}"'
+        "})"
+    )
+    try:
+        await command("hyprctl", "dispatch", dispatcher)
+    except DictationError:
+        raise DictationError(
+            "Hyprland could not send the shortcut. Text is available in the clipboard."
+        ) from None
+
+
 class Session:
     def __init__(self, ui):
         self.ui = ui
@@ -158,20 +178,13 @@ class Session:
             if window.get("class", "").lower() in terminal_classes
             else "CTRL"
         )
-        await command(
-            "hyprctl",
-            "dispatch",
-            "sendshortcut",
-            f"{modifiers}, v, address:{self.target}",
-        )
+        await send_shortcut(modifiers, "v", self.target)
         # Clipboard transfer and application processing are asynchronous. Keep
         # Enter separate, and leave a cancellation window after the paste.
         await asyncio.sleep(0.25)
         if await focused_window() != self.target:
             raise DictationError("Focus changed after pasting; Enter was not pressed.")
-        await command(
-            "hyprctl", "dispatch", "sendshortcut", f", Return, address:{self.target}"
-        )
+        await send_shortcut("", "Return", self.target)
 
     async def capture(self, queue):
         try:

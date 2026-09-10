@@ -1,7 +1,10 @@
 """Presentation-only animations; never delay dictation or clipboard delivery."""
 
 import math
+import json
+import subprocess
 import time
+from pathlib import Path
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -12,6 +15,15 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GtkLayerShell", "0.1")
 from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
+
+
+THEME = json.loads(Path(__file__).with_name("theme.json").read_text())
+COLORS = THEME["colors"]
+
+
+def rgb(name):
+    value = COLORS[name]
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
 
 
 def ease(value):
@@ -108,10 +120,10 @@ class AnimatedTranscript(Gtk.Label):
                 else 0
             )
             moving |= reveal < 1 or (letter.confirmed is not None and confidence < 1)
-            # Muted slate for provisional words; warm white once confirmed.
+            # Provisional words stay legible over the shared tinted glass.
             color = [
                 round((dark + (light - dark) * confidence) * 257)
-                for dark, light in zip((108, 114, 129), (239, 241, 247), strict=True)
+                for dark, light in zip(rgb("muted"), rgb("foreground"), strict=True)
             ]
             end = position + len(char.encode("utf-8"))
             for attr in (
@@ -194,7 +206,7 @@ class VoiceIcon(Gtk.DrawingArea):
         cr.fill()
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         if self.phase == "error":
-            cr.set_source_rgb(0.94, 0.57, 0.59)
+            cr.set_source_rgb(*(value / 255 for value in rgb("error")))
             cr.set_line_width(2)
             cr.move_to(-4, -4)
             cr.line_to(4, 4)
@@ -260,6 +272,7 @@ class DictationOverlay:
         )
         card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         card.set_name("dictation-card")
+        self.card = card
         window.add(card)
         self.icon = VoiceIcon()
         card.pack_start(self.icon, False, False, 0)
@@ -267,17 +280,49 @@ class DictationOverlay:
         self.text.set_valign(Gtk.Align.CENTER)
         card.pack_start(self.text, True, True, 0)
         css = Gtk.CssProvider()
-        css.load_from_data(b"""
+        palette = "\n".join(
+            f"@define-color {name} #{value};" for name, value in COLORS.items()
+        )
+        css.load_from_data((palette + """
             #voice-input { background: transparent; }
-            #dictation-card { background: #1c1c1e; border: none;
-              border-radius: 24px; padding: 12px 18px 12px 12px; }
-            #dictation-card label { font-family: sans-serif; }
-            #dictation-text { color: #acb0bd; font-size: 15px; }
-        """)
+            #dictation-card {
+              background-color: @background;
+              background-image: linear-gradient(145deg,
+                rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%,
+                rgba(255,255,255,0.03));
+              border: none;
+              border-radius: @radius@px; padding: 12px 18px 12px 12px;
+            }
+            #dictation-card.live-glass { background-color: alpha(@background, 0.20); }
+            #dictation-card label { font-family: "@font@", "Noto Sans", sans-serif; }
+            #dictation-text { color: @foreground; font-size: 15px; }
+        """).replace("@radius@", str(THEME["radius"]))
+           .replace("@font@", THEME["font"]).encode())
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
         self.hide_timer = None
+
+    def sync_glass_style(self):
+        # The daemon can start before the compositor plugin; check on each opening,
+        # just as the Wofi launcher does, instead of caching an opaque fallback.
+        live = False
+        try:
+            plugins = json.loads(subprocess.check_output(
+                ["hyprctl", "plugin", "list", "-j"],
+                stderr=subprocess.DEVNULL, timeout=0.5,
+            ))
+            live = isinstance(plugins, list) and any(
+                isinstance(plugin, dict) and plugin.get("name") == "hyprglass"
+                for plugin in plugins
+            )
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+        style = self.card.get_style_context()
+        if live:
+            style.add_class("live-glass")
+        else:
+            style.remove_class("live-glass")
 
     def hide_error(self):
         self.hide_timer = None
@@ -285,6 +330,8 @@ class DictationOverlay:
         return False
 
     def update(self, action, value):
+        if action in {"show", "error"}:
+            self.sync_glass_style()
         if action in {"show", "hide", "error"} and self.hide_timer:
             GLib.source_remove(self.hide_timer)
             self.hide_timer = None

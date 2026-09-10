@@ -4,12 +4,6 @@
   lib,
   ...
 }: let
-  # Dismiss existing notifications before launching the logout menu.
-  wlogoutWithClear = pkgs.writeShellScript "wlogout-clear-notifications" ''
-    ${pkgs.mako}/bin/makoctl dismiss --all || true
-    exec ${pkgs.wlogout}/bin/wlogout "$@"
-  '';
-
   # Focus the running Vesktop window (switching to its workspace), or launch it.
   focusOrLaunchVesktop = pkgs.writeShellScript "focus-or-launch-vesktop" ''
     vesktop_address="$(${pkgs.hyprland}/bin/hyprctl clients -j 2>/dev/null \
@@ -19,76 +13,53 @@
         ) | .address) // empty')"
 
     if [ -n "$vesktop_address" ]; then
-      exec ${pkgs.hyprland}/bin/hyprctl dispatch focuswindow "address:$vesktop_address"
+      exec ${pkgs.hyprland}/bin/hyprctl dispatch "hl.dsp.focus({ window = 'address:$vesktop_address' })"
     fi
 
     exec vesktop
   '';
 in {
-  wayland.windowManager.hyprland = {
-    settings = {
-      # keybinds
-      bind = [
-        # apps
-        "$mainMod, RETURN, exec, alacritty"
-        "$mainMod, TAB, killactive"
-        "$mainMod, V, exec, ${focusOrLaunchVesktop}"
-        "$mainMod, F, exec, dolphin"
-        "$mainMod, B, exec, firefox"
-        "$mainMod, C, exec, firefox https://gemini.google.com/"
-        "$mainMod, D, exec, /home/liam/nix-config/desktop/wofi/launch.sh"
-        "$mainMod, N, exec, alacritty -e nvim +'lua vim.schedule(function() vim.cmd([[Telescope projects]]) end)'"
-        # screenshot with flameshot
-        "$mainMod, p, exec, flameshot gui"
-        "$mainMod, ESCAPE, exec, wlogout -b 2"
-
-        # focus (vim-style)
-        "$mainMod, h, movefocus, l"
-        "$mainMod, j, movefocus, d"
-        "$mainMod, k, movefocus, u"
-        "$mainMod, l, movefocus, r"
-
-        # move window (vim-style + shift)
-        "$mainMod SHIFT, h, movewindow, l"
-        "$mainMod SHIFT, j, movetoworkspacesilent, r+1"
-        "$mainMod SHIFT, k, movetoworkspacesilent, r-1"
-        "$mainMod SHIFT, l, movewindow, r"
-
-        # workspaces
-        "$mainMod, Q, workspace, 1"
-        "$mainMod, W, workspace, 2"
-        "$mainMod, E, workspace, 3"
-        "$mainMod, R, workspace, 4"
-        "$mainMod, T, workspace, 5"
-        "$mainMod SHIFT, Q, movetoworkspace, 1"
-        "$mainMod SHIFT, W, movetoworkspace, 2"
-        "$mainMod SHIFT, E, movetoworkspace, 3"
-        "$mainMod SHIFT, R, movetoworkspace, 4"
-        "$mainMod SHIFT, T, movetoworkspace, 5"
-        "$mainMod CTRL, Q, movetoworkspacesilent, 1"
-        "$mainMod CTRL, W, movetoworkspacesilent, 2"
-        "$mainMod CTRL, E, movetoworkspacesilent, 3"
-        "$mainMod CTRL, R, movetoworkspacesilent, 4"
-        "$mainMod CTRL, T, movetoworkspacesilent, 5"
-
-        # toggle floating on the focused window
-        "$mainMod, g, togglefloating"
-
-        # fullscreen
-        "$mainMod, m, fullscreen"
-
-        # volume/media keys — wpctl with --limit 2.0 so we can boost past pulse's 153% UI cap
-        ", XF86AudioRaiseVolume, exec, wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%+"
-        ", XF86AudioLowerVolume, exec, wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%-"
-        ", XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
-        ", XF86AudioMicMute, exec, wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"
-      ];
-
-      # mouse bindings
-      bindm = [
-        "$mainMod, mouse:272, movewindow"
-        "$mainMod, mouse:273, resizewindow"
-      ];
-    };
-  };
+  xdg.configFile."hypr/hyprland.lua".text = ''
+    hl.bind("SUPER + RETURN", hl.dsp.exec_cmd("alacritty"))
+    hl.bind("SUPER + TAB", hl.dsp.window.close())
+    hl.bind("SUPER + V", hl.dsp.exec_cmd("${focusOrLaunchVesktop}"))
+    hl.bind("SUPER + F", hl.dsp.exec_cmd("dolphin"))
+    hl.bind("SUPER + B", hl.dsp.exec_cmd("firefox"))
+    hl.bind("SUPER + C", hl.dsp.exec_cmd("firefox https://gemini.google.com/"))
+    hl.bind("SUPER + D", hl.dsp.exec_cmd("wofi-glass"))
+    hl.bind("SUPER + N", hl.dsp.exec_cmd("alacritty -e nvim +'lua vim.schedule(function() vim.cmd([[Telescope projects]]) end)'"))
+    hl.bind("SUPER + p", hl.dsp.exec_cmd("flameshot gui"))
+    hl.bind("SUPER + ESCAPE", hl.dsp.exec_cmd("wlogout-glass"))
+    hl.bind("SUPER + h", hl.dsp.focus({ direction = "left" }))
+    hl.bind("SUPER + j", hl.dsp.focus({ direction = "down" }))
+    hl.bind("SUPER + k", hl.dsp.focus({ direction = "up" }))
+    hl.bind("SUPER + l", hl.dsp.focus({ direction = "right" }))
+    hl.bind("SUPER + SHIFT + h", hl.dsp.window.move({ direction = "left" }))
+    hl.bind("SUPER + SHIFT + j", hl.dsp.window.move({ workspace = "r+1", follow = false }))
+    hl.bind("SUPER + SHIFT + k", hl.dsp.window.move({ workspace = "r-1", follow = false }))
+    hl.bind("SUPER + SHIFT + l", hl.dsp.window.move({ direction = "right" }))
+    hl.bind("SUPER + Q", hl.dsp.focus({ workspace = "1" }))
+    hl.bind("SUPER + W", hl.dsp.focus({ workspace = "2" }))
+    hl.bind("SUPER + E", hl.dsp.focus({ workspace = "3" }))
+    hl.bind("SUPER + R", hl.dsp.focus({ workspace = "4" }))
+    hl.bind("SUPER + T", hl.dsp.focus({ workspace = "5" }))
+    hl.bind("SUPER + SHIFT + Q", hl.dsp.window.move({ workspace = "1", follow = true }))
+    hl.bind("SUPER + SHIFT + W", hl.dsp.window.move({ workspace = "2", follow = true }))
+    hl.bind("SUPER + SHIFT + E", hl.dsp.window.move({ workspace = "3", follow = true }))
+    hl.bind("SUPER + SHIFT + R", hl.dsp.window.move({ workspace = "4", follow = true }))
+    hl.bind("SUPER + SHIFT + T", hl.dsp.window.move({ workspace = "5", follow = true }))
+    hl.bind("SUPER + CTRL + Q", hl.dsp.window.move({ workspace = "1", follow = false }))
+    hl.bind("SUPER + CTRL + W", hl.dsp.window.move({ workspace = "2", follow = false }))
+    hl.bind("SUPER + CTRL + E", hl.dsp.window.move({ workspace = "3", follow = false }))
+    hl.bind("SUPER + CTRL + R", hl.dsp.window.move({ workspace = "4", follow = false }))
+    hl.bind("SUPER + CTRL + T", hl.dsp.window.move({ workspace = "5", follow = false }))
+    hl.bind("SUPER + g", hl.dsp.window.float({ action = "toggle" }))
+    hl.bind("SUPER + m", hl.dsp.window.fullscreen())
+    hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%+"))
+    hl.bind("XF86AudioLowerVolume", hl.dsp.exec_cmd("wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%-"))
+    hl.bind("XF86AudioMute", hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))
+    hl.bind("XF86AudioMicMute", hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"))
+    hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
+    hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
+  '';
 }

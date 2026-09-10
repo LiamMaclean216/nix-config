@@ -1,0 +1,4 @@
+@import url("style.css");
+button { background-color: @background; }
+button:hover, button:focus { background-color: mix(@background, @foreground, 0.14); }
+button:active { background-color: mix(@background, @foreground, 0.24); }

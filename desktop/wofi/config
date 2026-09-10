@@ -1,13 +1,15 @@
-[config]
-allow_images=true
-width=500
 show=drun
-prompt=Search
-height=400
-term=kitty
+width=620
+height=460
+location=center
+prompt=Search applications
+term=alacritty
+allow_images=true
+image_size=32
 hide_scroll=true
-print_command=true
 insensitive=true
+matching=fuzzy
 columns=1
 no_actions=true
-
+dynamic_lines=false
+gtk_dark=true

@@ -11,10 +11,10 @@ update:
 nixos:
 	sudo nixos-rebuild switch --flake .#nixos
 
-# Rebuild and switch Home Manager from this flake
+# Rebuild and switch Home Manager. Hyprland watches its active Lua config.
+# A config-format or compositor upgrade takes effect at the next login.
 home:
 	home-manager switch --flake .#liam
-	hyprctl reload
 
 # Reload Hyprland config
 hypr:
@@ -39,5 +39,5 @@ trustairpods:
 	bluetoothctl trust '$(AIRPODS_MAC)'
 	bluetoothctl info '$(AIRPODS_MAC)'
 
-# Do everything: NixOS, Home Manager, then Hyprland reload
-all: nixos home hypr
+# Rebuild both configurations without forcing a reload across a format upgrade.
+all: nixos home

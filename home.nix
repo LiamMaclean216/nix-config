@@ -7,6 +7,16 @@
 }: let
   myPython = import ./python.nix {inherit pkgs;};
   dir = "${config.home.homeDirectory}/nix-config";
+  theme = import ./desktop/theme.nix;
+  # Add the shared palette to GTK styles; keep other desktop files linked.
+  desktopFiles = name: lib.mapAttrs' (file: _: lib.nameValuePair
+    ".config/${name}/${file}"
+    (if lib.hasSuffix ".css" file then {
+      text = theme.renderCss (builtins.readFile (./desktop + "/${name}/${file}"));
+    } else {
+      source = config.lib.file.mkOutOfStoreSymlink "${dir}/desktop/${name}/${file}";
+    })
+  ) (builtins.readDir (./desktop + "/${name}"));
 in {
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
@@ -22,18 +32,7 @@ in {
   # release notes.
   home.stateVersion = "25.05"; # Please read the comment before changing.
 
-  # Enable Qt theming with stylix
-  qt.enable = true;
-  qt.platformTheme.name = "qtct";
-  qt.style.name = "kvantum";
-
-  # Stylix Qt theming
-  stylix.targets.qt.enable = true;
-
   home.packages = [
-    pkgs.libsForQt5.qt5ct
-    pkgs.libsForQt5.qtstyleplugin-kvantum
-    pkgs.kdePackages.qtstyleplugin-kvantum
     pkgs.hello
     pkgs.wl-clipboard
     pkgs.ruff
@@ -88,20 +87,24 @@ in {
     export PATH="$HOME/node_modules/bin:$PATH"
   '';
 
+  # Older generations linked these entire directories back into this repository.
+  # Detach those links before per-file management, which would otherwise replace
+  # repository sources with links to their own generated Home Manager files.
+  home.activation.migrateDesktopConfigDirectories = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
+    for desktopName in wofi wlogout; do
+      desktopConfig="$HOME/.config/$desktopName"
+      if [[ -L "$desktopConfig" ]] &&
+         [[ "$(readlink "$desktopConfig")" == /nix/store/*-home-manager-files/.config/"$desktopName" ]]; then
+        run rm -- "$desktopConfig"
+        run mkdir -p -- "$desktopConfig"
+      fi
+    done
+  '';
+
   # Ensure ~/venv exists with pynvim
   home.file.".venv/.keep".text = ''
     # placeholder to create venv folder
   '';
-
-  home.file.".config/wofi" = {
-    source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wofi");
-    recursive = true;
-  };
-
-  home.file.".config/wlogout" = {
-    source = config.lib.file.mkOutOfStoreSymlink (dir + "/desktop/wlogout");
-    recursive = true;
-  };
 
   home.file.".config/nvf/lua/config" = {
     source = config.lib.file.mkOutOfStoreSymlink (dir + "/programs/nvim/lua/");
@@ -121,16 +124,6 @@ in {
     if [ ! -d "$VENV" ]; then
       "$PYTHON" -m venv "$VENV"
       "$VENV/bin/pip" install --upgrade pip pynvim
-    fi
-  '';
-
-  # Generate pywal color scheme from background image
-  home.activation.generatePywalColors = lib.hm.dag.entryAfter ["writeBoundary"] ''
-    rm -rf "$HOME/.cache/wal"
-    ${pkgs.pywal}/bin/wal -i ${dir}/desktop/background.webp -n -q -s -t
-    # Reload mako service if it's running to pick up new colors
-    if systemctl --user is-active --quiet mako.service; then
-      systemctl --user reload mako.service || true
     fi
   '';
 
@@ -154,6 +147,7 @@ in {
   programs.home-manager.enable = true;
 
   imports = [
+    { home.file = desktopFiles "wofi" // desktopFiles "wlogout"; }
     ./programs/nvim/nvim.nix
     ./programs/vscode.nix
     ./programs/codex.nix
@@ -169,6 +163,8 @@ in {
     ./desktop/hyprlock.nix
     ./desktop/workspaces.nix
     ./desktop/keybindings.nix
+    ./desktop/wofi.nix
+    ./desktop/wlogout.nix
     ./desktop/waybar.nix
     ./desktop/mako.nix
     ./desktop/screen-record.nix

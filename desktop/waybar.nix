@@ -1,6 +1,7 @@
 { pkgs, lib, ... }:
 
 let
+  theme = import ./theme.nix;
   discordStatusScript = pkgs.writeShellScript "waybar-discord-status" ''
     set -euo pipefail
 
@@ -49,11 +50,11 @@ in
       };
     };
 
-    style = ''
+    style = theme.gtkColors + ''
       * {
         border: none;
         border-radius: 0;
-        font-family: "JetBrainsMono Nerd Font", monospace;
+        font-family: "${theme.font}", "Noto Sans", sans-serif;
         font-size: 12pt;
         font-weight: 500;
         min-height: 0;
@@ -61,19 +62,19 @@ in
 
       window#waybar {
         background: transparent;
-        color: #d8deeb;
+        color: @foreground;
         padding: 0;
         margin: 0;
       }
 
       #clock {
-        background: rgb(30, 30, 35);
-        border-radius: 999px;
+        background: @background;
+        border-radius: ${toString theme.radius}px;
         padding: 11px 20px 9px 20px;
         letter-spacing: 0.3px;
-        color: #ffffff;
-        border: 1px solid rgb(0, 0, 0);
-        font-family: "FiraCode Nerd Font", monospace;
+        color: @foreground;
+        border: none;
+        font-family: "${theme.font}", "Noto Sans", sans-serif;
         font-weight: 400;
       }
 

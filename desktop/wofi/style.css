@@ -1,100 +1,43 @@
-@import url('/home/liam/.cache/wal/colors-waybar.css');
-
-@define-color mauve  @color9;
-@define-color red  @color9;
-@define-color lavender  @color7;
-@define-color text  @color7;
-@keyframes fadeIn {
-    0% {
-    }
-    100% {
-    }
-}
-
+/* HyprGlass supplies the live refracted backdrop beneath this alpha mask. */
 * {
-    all:unset;
-    font-family: 'CodeNewRoman Nerd Font Mono', monospace;
-    font-size: 18px;
+    font-family: "@font@", "Noto Sans", sans-serif;
+    font-size: 16px;
     outline: none;
     border: none;
-    text-shadow:none;
-    background-color:transparent;
+    text-shadow: none;
+    box-shadow: none;
 }
-
 window {
-    all:unset;
+    background-color: alpha(@background, 0.20);
+    border-radius: @radius@px;
+    color: @foreground;
+}
+#outer-box {
     padding: 20px;
-    border-radius: 22px;
-    background-color: alpha(@background,.5);
-}
-#inner-box {
-    margin: 2px;
-    padding: 5px
-    border: none;
-}
-#outer-box {    
-    border: none;
-}
-#scroll {
-    margin: 0px;
-    padding: 30px;
-    border: none;
+    border-radius: @radius@px;
+    background-image: linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03));
 }
 #input {
-    all:unset;
-    margin-left:20px;
-    margin-right:20px;
-    margin-top:20px;
-    padding: 20px;
-    border: none;
-    outline: none;
-    color: @text;
-    box-shadow: 1px 1px 5px rgba(0,0,0, .5);
-    border-radius:10;
-    background-color: alpha(@background,.2);
+    margin: 0 0 14px;
+    padding: 15px 16px;
+    border-radius: 16px;
+    background: alpha(@shadow, 0.28);
+    color: @foreground;
+    font-size: 20px;
+    caret-color: @foreground;
 }
-#input image {
-    border: none;
-    color: @red;
-    padding-right:10px;
-}
-#input * {
-    border: none;
-    outline: none;
-}
-
-#input:focus {
-    outline: none;
-    border: none;
-
-    border-radius:10;
-}
-#text {
-    margin: 5px;
-    border: none;
-    color: @text;
-    outline: none;
-}
-
+#input image { color: alpha(@foreground, 0.7); margin-right: 10px; }
+#scroll, #inner-box { background: transparent; }
+#scroll undershoot, #scroll overshoot { background: none; box-shadow: none; }
 #entry {
-    border: none;
-    margin: 5px;
-    padding: 10px;
-}
-#entry arrow {
-    border: none;
-    color: @lavender;
-
+    padding: 10px 12px;
+    margin: 2px 0;
+    border-radius: 14px;
+    background: transparent;
 }
 #entry:selected {
-    box-shadow: 1px 1px 5px rgba(255,255,255, .03);
-    border: none;
-    border-radius: 20px;
-    background-color:transparent;
+    background-image: linear-gradient(110deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10));
 }
-#entry:selected #text {
-    color: @mauve;
-}
-#entry:drop(active) {
-    background-color: @lavender !important;
-}
+#text { margin-left: 12px; color: @foreground; }
+#text:selected { color: @foreground; }
+#img { background: transparent; }

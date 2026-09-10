@@ -22,7 +22,6 @@ in
     ./hardware-configuration.nix
     ./nvidia.nix
     ./fonts.nix
-    ./stylix.nix
     ./programs/firefox.nix
   ];
 
@@ -76,7 +75,7 @@ in
     enable = true;
     settings = rec {
       initial_session = {
-        command = "Hyprland > /dev/null 2>&1";
+        command = "${pkgs.hyprland}/bin/start-hyprland";
         user = "liam";
       };
       default_session = initial_session;
@@ -327,7 +326,6 @@ in
     usbutils
     linux-firmware
 
-    pywal
     wofi
     hyprshot
     imv
@@ -383,6 +381,10 @@ in
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "25.05"; # Did you read the comment?
   nix.settings.experimental-features = ["nix-command" "flakes"];
+  nix.settings.substituters = [ "https://hyprland.cachix.org" ];
+  nix.settings.trusted-public-keys = [
+    "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
+  ];
 
   environment.pathsToLink = ["/libexec"]; # links /libexec from derivations to /run/current-system/sw
 
@@ -392,7 +394,11 @@ in
   };
 
   # Switch to Hyprland (Wayland)
-  programs.hyprland.enable = true;
+  programs.hyprland = {
+    enable = true;
+    package = pkgs.hyprland;
+    portalPackage = pkgs.xdg-desktop-portal-hyprland;
+  };
 
   # PAM entry so hyprlock can authenticate
   security.pam.services.hyprlock = {};

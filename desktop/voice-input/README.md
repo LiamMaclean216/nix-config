@@ -1,7 +1,7 @@
 Hold **Mouse 5** (the forward side button, Hyprland `mouse:276`) to dictate.
 The bottom-center overlay shows Soniox's live transcript without taking focus.
 New letters fade in; provisional words appear in muted slate and brighten as
-they are finalized. An opaque, borderless popup stays at full width throughout. Its
+they are finalized. A borderless glass popup (opaque when HyprGlass is unavailable) stays at full width throughout. Its
 colored dots sweep inward and unfold into a gently moving waveform at startup.
 The waveform gathers into orbiting dots while finishing and settles during delivery;
 there are no status labels or provider branding in the popup.
@@ -9,7 +9,7 @@ These animations only affect the preview; they never delay pasting or submission
 Release to stop the microphone, finish the last words, and paste the entire text
 into the focused field, then press Enter to submit it. There is no typing animation.
 The transcript is copied to the clipboard. Terminals use Ctrl+Shift+V; other
-applications use Ctrl+V. Enter follows after a short pause for paste processing.
+applications use Ctrl+V. Shortcuts use Hyprland’s Lua dispatcher API. Enter follows after a short pause for paste processing.
 Empty dictation, errors, and cancellation do not press Enter.
 **Escape** (or **Super + Shift + Escape**) cancels before pasting or prevents
 the pending Enter after pasting. Text already pasted remains.

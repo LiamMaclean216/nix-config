@@ -12,28 +12,54 @@
     nvf.url = "github:notashelf/nvf";
     nvf.inputs.nixpkgs.follows = "nixpkgs";
 
-    hyprland.url = "github:hyprwm/Hyprland";
-
-    hyprland-plugins = {
-      url = "github:hyprwm/hyprland-plugins";
-      inputs.hyprland.follows = "hyprland";
+    # Keep the compositor and its private-API glass plugin on matching releases.
+    hyprland.url = "github:hyprwm/Hyprland/v0.56.2";
+    hyprglass = {
+      url = "github:hyprnux/hyprglass/v0.8.0";
+      flake = false;
+    };
+    # 0.56.2 requires Glaze 7, but its upstream Nix input now supplies Glaze 8.
+    hyprland-glaze = {
+      url = "github:stephenberry/glaze/v7.2.0";
+      flake = false;
     };
 
-    stylix.url = "github:nix-community/stylix/release-25.05";
-    stylix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs@{self, nixpkgs, home-manager, nvf, ...}:
     let
       lib = nixpkgs.lib;
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      desktopOverlay = final: prev: {
+        # Firefox 146 crashes against newer Wayland color-management globals.
+        firefox = inputs.hyprland.inputs.nixpkgs.legacyPackages.${system}.firefox;
+        # The lock-screen controls use the current Hyprlock widget options.
+        hyprlock = inputs.hyprland.inputs.nixpkgs.legacyPackages.${system}.hyprlock;
+        hyprland = inputs.hyprland.packages.${system}.hyprland.override {
+          glaze-hyprland = (inputs.hyprland.inputs.nixpkgs.legacyPackages.${system}.glaze.override {
+            enableSSL = false;
+            enableInterop = false;
+          }).overrideAttrs {
+            version = "7.2.0";
+            src = inputs.hyprland-glaze;
+          };
+        };
+        xdg-desktop-portal-hyprland = inputs.hyprland.packages.${system}.xdg-desktop-portal-hyprland.override {
+          inherit (final) hyprland;
+        };
+        hyprglass = prev.callPackage ./desktop/hyprglass {
+          inherit (final) hyprland;
+          src = inputs.hyprglass;
+        };
+      };
+      pkgs = import nixpkgs { inherit system; overlays = [ desktopOverlay ]; };
     in {
+      packages.${system} = { inherit (pkgs) hyprland hyprglass; };
       nixosConfigurations = {
         nixos = lib.nixosSystem {
           inherit system;
           modules = [
-            inputs.stylix.nixosModules.stylix
+            { nixpkgs.overlays = [ desktopOverlay ]; }
             ./configuration.nix
           ];
           specialArgs = { inherit inputs; };
@@ -43,7 +69,6 @@
         liam = home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = [
-            inputs.stylix.homeModules.stylix
             nvf.homeManagerModules.default
             ./home.nix
           ];

@@ -3,6 +3,7 @@
   pkgs,
   ...
 }: let
+  theme = import ./theme.nix;
   hyprlockSolar = pkgs.writeShellApplication {
     name = "hyprlock-solar";
     runtimeInputs = [
@@ -207,12 +208,16 @@
   };
 
   hyprlockConfig = builtins.replaceStrings
-    ["@HYPRLOCK_SOLAR@" "@HYPRLOCK_WINDOWS@" "@HYPRLOCK_WINDOWS_ICON@"]
-    [
+    (["@HYPRLOCK_SOLAR@" "@HYPRLOCK_WINDOWS@" "@HYPRLOCK_WINDOWS_ICON@" "@WALLPAPER@" "@radius@" "@font@"]
+      ++ map (name: "@${name}@") (builtins.attrNames theme.colors))
+    ([
       "${hyprlockSolar}/bin/hyprlock-solar"
       "${hyprlockWindows}/bin/hyprlock-windows-reboot"
-      "${config.home.homeDirectory}/nix-config/desktop/wlogout/windows.png"
-    ]
+      "${./wlogout/windows.png}"
+      "${./background.webp}"
+      (toString theme.radius)
+      theme.font
+    ] ++ builtins.attrValues theme.colors)
     (builtins.readFile ./hyprlock.conf);
 in {
   programs.hyprlock.enable = true;

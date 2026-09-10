@@ -9,36 +9,27 @@ let
     if ! pgrep -f "alacritty --class notes-scratchpad" > /dev/null; then
       alacritty --class notes-scratchpad -e nvim ~/notes.txt &
     fi
-    hyprctl dispatch togglespecialworkspace spotify
+    # Lua configs require a Lua dispatcher expression, including through hyprctl.
+    ${pkgs.hyprland}/bin/hyprctl dispatch 'hl.dsp.workspace.toggle_special("spotify")'
   '';
-in
-{
-  wayland.windowManager.hyprland = {
-    settings = {
-      # Startup
-      "exec-once" = [
-        "spotify"
-        "alacritty --class notes-scratchpad -e nvim ~/notes.txt"
-      ];
-
-      # Keybinds
-      bind = [
-        # Spotify scratchpad toggle
-        "$mainMod, S, exec, ${toggleSpotify}"
-      ];
-
-      # Window rules for Spotify scratchpad
-      windowrulev2 = [
-        "float, class:^(Spotify)$"
-        "size 35% 70%, class:^(Spotify)$"
-        "move 55% 15%, class:^(Spotify)$"
-        "workspace special:spotify silent, class:^(Spotify)$"
-
-        "float, class:^(notes-scratchpad)$"
-        "size 35% 70%, class:^(notes-scratchpad)$"
-        "move 10% 15%, class:^(notes-scratchpad)$"
-        "workspace special:spotify silent, class:^(notes-scratchpad)$"
-      ];
-    };
-  };
+in {
+  xdg.configFile."hypr/hyprland.lua".text = ''
+    hl.on("hyprland.start", function()
+      hl.exec_cmd("spotify")
+      hl.exec_cmd("alacritty --class notes-scratchpad -e nvim ~/notes.txt")
+    end)
+    hl.bind("SUPER + S", hl.dsp.exec_cmd("${toggleSpotify}"))
+    hl.window_rule({
+      name = "spotify-scratchpad", match = { class = "^(Spotify)$" },
+      float = true, size = "(monitor_w*0.35) (monitor_h*0.70)",
+      move = "(monitor_w*0.55) (monitor_h*0.15)",
+      workspace = "special:spotify silent",
+    })
+    hl.window_rule({
+      name = "notes-scratchpad", match = { class = "^(notes-scratchpad)$" },
+      float = true, size = "(monitor_w*0.35) (monitor_h*0.70)",
+      move = "(monitor_w*0.10) (monitor_h*0.15)",
+      workspace = "special:spotify silent",
+    })
+  '';
 }
