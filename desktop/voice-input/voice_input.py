@@ -206,8 +206,8 @@ class Session:
                 raise DictationError(
                     "Soniox returned an unreadable response. Please try again."
                 ) from None
-            text = transcript.update(message)
-            self.ui("text", text)
+            transcript.update(message)
+            self.ui("text", (transcript.final, transcript.partial))
             if message.get("finished"):
                 return
         raise DictationError("Soniox disconnected before finishing. Please try again.")
@@ -382,94 +382,14 @@ class Daemon:
 
 
 def run_daemon():
-    import cairo
-    import gi
-
-    gi.require_version("Gtk", "3.0")
-    gi.require_version("Gdk", "3.0")
-    gi.require_version("GtkLayerShell", "0.1")
-    from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, Pango
+    from overlay import DictationOverlay
+    from gi.repository import GLib, Gtk
 
     Gtk.init([])
-    window = Gtk.Window()
-    window.set_name("voice-input")
-    window.set_app_paintable(True)
-    window.set_visual(window.get_screen().get_rgba_visual())
-    GtkLayerShell.init_for_window(window)
-    GtkLayerShell.set_namespace(window, "voice-input")
-    GtkLayerShell.set_layer(window, GtkLayerShell.Layer.OVERLAY)
-    GtkLayerShell.set_anchor(window, GtkLayerShell.Edge.BOTTOM, True)
-    GtkLayerShell.set_margin(window, GtkLayerShell.Edge.BOTTOM, 64)
-    GtkLayerShell.set_exclusive_zone(window, -1)
-    GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.NONE)
-    window.set_accept_focus(False)
-    window.connect(
-        "realize",
-        lambda widget: widget.get_window().input_shape_combine_region(
-            cairo.Region(), 0, 0
-        ),
-    )
-    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-    box.set_name("dictation-card")
-    window.add(box)
-    status = Gtk.Label(xalign=0)
-    status.set_name("dictation-status")
-    label = Gtk.Label(xalign=0)
-    label.set_line_wrap(True)
-    label.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
-    label.set_max_width_chars(56)
-    label.set_width_chars(56)
-    box.pack_start(status, False, False, 0)
-    box.pack_start(label, False, False, 0)
-    css = Gtk.CssProvider()
-    css.load_from_data(b"""
-        #voice-input { background: transparent; }
-        #dictation-card { background: #181a20; color: #f5f6f8;
-          border: none; border-radius: 18px; padding: 16px 22px; }
-        #dictation-status { color: #9ca3af; font-size: 11px;
-          font-weight: 500; letter-spacing: 0.6px; }
-        #dictation-card label { font-family: sans-serif; }
-        #dictation-card > label:last-child { font-size: 17px; }
-    """)
-    Gtk.StyleContext.add_provider_for_screen(
-        Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-    )
-    hide_timer = None
-
-    def update(action, text):
-        nonlocal hide_timer
-        if action in {"show", "hide", "error"} and hide_timer:
-            GLib.source_remove(hide_timer)
-            hide_timer = None
-        if action == "show":
-            status.set_text("●  SONIOX · Hold Mouse 5 to speak")
-            label.set_text(text)
-            window.show_all()
-        elif action == "text":
-            # Keep the overlay compact, but retain the entire transcript for insertion.
-            label.set_text(
-                ("…" if len(text) > 420 else "") + text[-420:] if text else "Listening…"
-            )
-        elif action == "status":
-            status.set_text("●  SONIOX · " + text)
-        elif action == "hide":
-            window.hide()
-        elif action == "error":
-            status.set_text("SONIOX · Dictation stopped")
-            label.set_text(text)
-            window.show_all()
-
-            def hide_error():
-                nonlocal hide_timer
-                hide_timer = None
-                window.hide()
-                return False
-
-            hide_timer = GLib.timeout_add_seconds(6, hide_error)
-        return False
+    overlay = DictationOverlay()
 
     loop = asyncio.new_event_loop()
-    daemon = Daemon(lambda action, text: GLib.idle_add(update, action, text))
+    daemon = Daemon(lambda action, text: GLib.idle_add(overlay.update, action, text))
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
     future = asyncio.run_coroutine_threadsafe(daemon.serve(), loop)

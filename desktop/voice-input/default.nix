@@ -11,7 +11,7 @@ in stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out/bin $out/share/voice-input
-    cp voice_input.py $out/share/voice-input/
+    cp voice_input.py overlay.py $out/share/voice-input/
     makeWrapper ${python}/bin/python $out/bin/voice-input \
       --add-flags "$out/share/voice-input/voice_input.py" \
       --prefix PATH : ${lib.makeBinPath [pipewire wl-clipboard hyprland libnotify]} \
