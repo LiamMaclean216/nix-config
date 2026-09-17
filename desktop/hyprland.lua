@@ -23,9 +23,10 @@ end
 hl.config({
     xwayland = { force_zero_scaling = true },
     general = {
-        gaps_in = 5, gaps_out = 10, resize_on_border = true, border_size = 0,
+        gaps_in = 5, gaps_out = 10, resize_on_border = true, border_size = 1,
+        col = { active_border = "rgba(ffffff88)" },
     },
-    decoration = { rounding = @RADIUS@ },
+    decoration = { rounding = 8 },
     input = { accel_profile = "flat", sensitivity = 0.0 },
 })
 hl.monitor({ output = "", mode = "3440x1440@240", position = "auto", scale = 1 })

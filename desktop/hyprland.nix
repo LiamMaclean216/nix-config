@@ -75,8 +75,8 @@ in
   };
 
   xdg.configFile."hypr/hyprland.lua".text = lib.mkBefore (builtins.replaceStrings
-    [ "@GLASS@" "@BACKGROUND@" "@RADIUS@" "@WAYBAR_HIDE@" "@SESSION_START@" ]
-    [ "${pkgs.hyprglass}/lib/libhyprglass.so" theme.colors.background (toString theme.radius)
+    [ "@GLASS@" "@BACKGROUND@" "@WAYBAR_HIDE@" "@SESSION_START@" ]
+    [ "${pkgs.hyprglass}/lib/libhyprglass.so" theme.colors.background
       "${waybarHideScript}"
       "${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all && systemctl --user stop hyprland-session.target && systemctl --user start hyprland-session.target"
     ]
