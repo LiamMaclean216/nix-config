@@ -549,6 +549,15 @@ function Backend:start(on_ready)
 	self:_spawn()
 end
 
+function Backend:reconcile_statuses(threads, revision)
+	for _, thread in ipairs(threads) do
+		local live = self._statuses[thread.id]
+		if live and live.revision > (revision or 0) then
+			thread.status = normalize(live.status)
+		end
+	end
+end
+
 local function fetch_threads(self, method, params, callback)
 	if type(params) == "function" and callback == nil then
 		callback = params
@@ -603,12 +612,7 @@ local function fetch_threads(self, method, params, callback)
 		self:_defer(function()
 			-- Reconcile at delivery: status events can arrive even after the last
 			-- page is processed while this callback is waiting on the scheduler.
-			for _, thread in ipairs(threads) do
-				local live = self._statuses[thread.id]
-				if live and live.revision > snapshot_revision then
-					thread.status = normalize(live.status)
-				end
-			end
+			self:reconcile_statuses(threads, snapshot_revision)
 			if type(callback) == "function" then
 				callback(nil, threads)
 			end

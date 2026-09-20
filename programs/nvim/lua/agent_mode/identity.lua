@@ -76,6 +76,9 @@ local function same_prompt(session, thread)
 	if expected == actual then
 		return true
 	end
+	if session.initial_prompt_truncated and #expected >= 16 and actual:sub(1, #expected) == expected then
+		return true
+	end
 	-- The list preview may be truncated. A generated title is never identity.
 	return #actual >= 16 and #actual < #expected and expected:sub(1, #actual) == actual
 end

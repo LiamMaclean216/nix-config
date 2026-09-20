@@ -1970,6 +1970,174 @@ test("typing an inline plan prompt retains identity before interruption", functi
 	assert(session.id == "saved" and #state.order == 1)
 end)
 
+test("a failed background resume cannot block the pending terminal's canonical identity", function()
+	local session = pending("pending-1")
+	local failed = { id = "saved", key = "saved", notify_token = "failed",
+		frontend_status = "active", active_elsewhere = true,
+		buf = vim.api.nvim_create_buf(false, true) }
+	state.sessions.saved, state.session_tokens.failed = failed, failed
+	state.threads.saved = thread("saved")
+	listing({ thread("saved", "hello", { status = { type = "active" } }) })
+	refresh()
+	assert(session.id == "saved" and state.sessions.saved == session)
+	assert(#state.order == 1 and not state.threads["pending-1"])
+	assert(not state.session_tokens.failed and not vim.api.nvim_buf_is_valid(failed.buf))
+end)
+
+test("wrapped terminal prompts bind uniquely without treating complete prompts as prefixes", function()
+	local session = pending("pending-1", "investigate the refresh problem")
+	local saved = thread("saved", session.initial_prompt .. " and fix the duplicates")
+	assert(#Identity.matches(state.sessions, { saved }) == 0)
+	session.initial_prompt_truncated = true
+	assert(#Identity.matches(state.sessions, { saved }) == 1)
+	local matches, unresolved = Identity.matches(state.sessions, {
+		saved, thread("other", session.initial_prompt .. " in another window"),
+	})
+	assert(#matches == 0 and unresolved.saved and unresolved.other)
+	listing({ saved })
+	refresh()
+	assert(session.id == "saved" and #state.order == 1)
+end)
+
+test("identity repair cannot replace another live terminal", function()
+	local pending_session = pending("pending-1")
+	local owner = { id = "saved", key = "saved", job_id = 123 }
+	state.sessions.saved = owner
+	local jobwait = vim.fn.jobwait
+	vim.fn.jobwait = function() return { -1 } end
+	local ok, err = pcall(function()
+		internals.bind_session(pending_session, thread("saved"), true)
+		assert(not pending_session.id and state.sessions.saved == owner)
+		assert(#Identity.matches(internals.identity_sessions(), { thread("saved") }) == 0)
+	end)
+	vim.fn.jobwait = jobwait
+	assert(ok, err)
+end)
+
+test("refresh preserves exited terminal status and retires a stale working default", function()
+	for _, frontend in ipairs({ "closed", "error", "loading" }) do
+		local session = { id = "saved", key = "saved", job_id = 987654321,
+			default_status = "working", frontend_status = frontend }
+		state.sessions.saved = session
+		listing({ thread("saved", nil, { status = { type = "notLoaded" } }) })
+		refresh()
+		assert(session.default_status == "ready")
+		assert(status_name(state.threads.saved) == (frontend == "error" and "error" or "closed"))
+	end
+end)
+
+test("an unloaded conversation clears a stale external writer conflict", function()
+	local session = { id = "saved", key = "saved", active_elsewhere = true, retry_after = math.huge }
+	state.sessions.saved = session
+	listing({ thread("saved", nil, { status = { type = "notLoaded" } }) })
+	refresh()
+	assert(not session.active_elsewhere and not session.retry_after)
+	assert(status_name(state.threads.saved) == "closed")
+end)
+
+test("missing exited placeholders release their sessions and notification tokens", function()
+	local session = pending("pending-1")
+	listing({})
+	refresh()
+	refresh()
+	refresh()
+	assert(not state.threads[session.key] and not state.sessions[session.key])
+	assert(not state.session_tokens[session.notify_token])
+end)
+
+test("status events arriving during identity reads survive list delivery", function()
+	pending("pending-1", "/review")
+	state.threads.saved = thread("saved", "review", { status = { type = "active" } })
+	local backend = Backend.new({ on_notification = internals.handle_backend_notification })
+	backend._defer = function(_, cb, ...) if cb then cb(...) end end
+	backend.list_threads = function(_, _, cb)
+		cb(nil, { thread("saved", "review", { status = { type = "active" } }) })
+	end
+	local read
+	backend.read_thread = function(_, _, cb) read = cb end
+	state.backend = backend
+	refresh()
+	assert(state.refreshing)
+	runtime_status(backend, "saved", { type = "idle" })
+	read(nil, { thread = thread("saved", "review", { turns = {
+		{ items = { { type = "enteredReviewMode" } } },
+	} }) })
+	assert(not state.refreshing and #state.order == 1)
+	assert(status_name(state.threads.saved) == "ready")
+end)
+
+test("resync replaces in-flight lists, repairs history and preserves live terminals", function()
+	local old_list, new_list, old_dismissed
+	listing({})
+	local backend = state.backend
+	backend.list_threads = function(_, params, cb)
+		if params.archived then old_dismissed = cb else old_list = cb end
+	end
+	refresh()
+	internals.refresh_dismissed_threads()
+	local buf = vim.api.nvim_create_buf(false, true)
+	local session = { id = "live", key = "live", job_id = 123, buf = buf }
+	state.sessions.live = session
+	local stopped = 0
+	backend.stop = function() stopped = stopped + 1 end
+	backend.start = function(_, cb) cb() end
+	backend.list_threads = function(_, params, cb)
+		assert(not params.useStateDbOnly, "resync must repair the persisted history index")
+		new_list = cb
+	end
+	state.history_repaired = true
+	local jobwait, jobstop = vim.fn.jobwait, vim.fn.jobstop
+	vim.fn.jobwait = function() return { -1 } end
+	vim.fn.jobstop = function() error("resync must not stop live terminals") end
+	local ok, err = pcall(function()
+		mode.resync()
+		assert(stopped == 1 and state.refreshing and new_list)
+		old_list(nil, { thread("stale") })
+		old_dismissed(nil, { thread("stale-archive") })
+		assert(state.refreshing and not state.threads.stale and not state.dismissed_threads["stale-archive"])
+		new_list(nil, { thread("live", nil, { status = { type = "idle" } }) })
+		assert(not state.refreshing and state.history_repaired and #state.order == 1)
+		assert(state.sessions.live == session and vim.api.nvim_buf_is_valid(buf))
+	end)
+	vim.fn.jobwait, vim.fn.jobstop = jobwait, jobstop
+	assert(ok, err)
+end)
+
+test("resync refreshes the dismissed tab and clears stale writer retry state", function()
+	state.recents_tab = "dismissed"
+	local session = { id = "saved", key = "saved", active_elsewhere = true, retry_after = math.huge }
+	state.sessions.saved = session
+	local active, dismissed = 0, 0
+	state.backend = {
+		stop = function() end,
+		start = function(_, cb) cb() end,
+		list_threads = function(_, params, cb)
+			if params.archived then dismissed = dismissed + 1 else active = active + 1 end
+			cb(nil, { thread(params.archived and "archive" or "saved") })
+		end,
+	}
+	mode.resync()
+	assert(active == 1 and dismissed == 1 and state.dismissed_threads.archive)
+	assert(not session.active_elsewhere and not session.retry_after)
+end)
+
+test("late startup callbacks from before resync cannot mark the new connection unavailable", function()
+	local starts = {}
+	state.backend_ready = false
+	state.backend = {
+		stop = function() end,
+		start = function(_, cb) table.insert(starts, cb) end,
+		list_threads = function(_, _, cb) cb(nil, {}) end,
+	}
+	internals.start_backend()
+	mode.resync()
+	assert(#starts == 2)
+	starts[2]()
+	assert(state.backend_ready)
+	starts[1]("old connection stopped")
+	assert(state.backend_ready)
+end)
+
 reset()
 vim.defer_fn = real_defer
 print(string.format("Passed %d recents regression tests", count))

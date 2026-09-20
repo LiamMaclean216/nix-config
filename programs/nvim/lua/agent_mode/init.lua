@@ -29,6 +29,7 @@ local state = {
 	backend = nil,
 	backend_ready = false,
 	refreshing = false,
+	refresh_generation = 0,
 	threads = {},
 	active_order = {},
 	dismissed_threads = {},
@@ -527,8 +528,8 @@ local function render_sidebar()
 			active_hl, #state.active_order, dismissed_hl
 		)
 		vim.wo[state.sidebar_win].statusline = state.recents_tab == "active"
-			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [f] fork  [d] dismiss  [D] dismiss all  [q] back"
-			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [f] fork  [d] restore  [q] back"
+			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [r] resync  [f] fork  [d] dismiss  [D] dismiss all  [q] back"
+			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [r] resync  [f] fork  [d] restore  [q] back"
 		if state.search_term and not state.filter then
 			vim.wo[state.sidebar_win].statusline = "  [Esc] clear filter" .. vim.wo[state.sidebar_win].statusline
 		end
@@ -1354,6 +1355,8 @@ local function configure_terminal_buffer(session)
 			-- Keep that evidence so the saved row replaces the temporary one.
 			if not session.id and not session.initial_prompt then
 				session.initial_prompt = prompt
+				-- A terminal line can contain only the start of a wrapped prompt.
+				session.initial_prompt_truncated = true
 			end
 		end
 		if terminal_running(session) then
@@ -1643,8 +1646,13 @@ local function bind_session(session, thread, identity_confirmed)
 	if not session or not thread then
 		return
 	end
-	if state.sessions[thread.id] and state.sessions[thread.id] ~= session then
-		return
+	local occupying = state.sessions[thread.id]
+	if occupying and occupying ~= session then
+		if terminal_running(occupying) or occupying.closing then
+			return
+		end
+		occupying.closing = true
+		finish_session_close(occupying)
 	end
 	if session.id == thread.id then
 		if identity_confirmed then
@@ -1713,8 +1721,20 @@ local function bind_session(session, thread, identity_confirmed)
 	end
 end
 
+local function identity_sessions()
+	local candidates = {}
+	for key, session in pairs(state.sessions) do
+		-- A failed background resume must not reserve the canonical ID forever.
+		local failed = session.active_elsewhere or session.frontend_status == "closed" or session.frontend_status == "error"
+		if not session.id or terminal_running(session) or session.closing or (not session.job_id and not failed) then
+			candidates[key] = session
+		end
+	end
+	return candidates
+end
+
 local function associate_pending_sessions(threads)
-	local matches, unresolved = Identity.matches(state.sessions, threads)
+	local matches, unresolved = Identity.matches(identity_sessions(), threads)
 	for _, match in ipairs(matches) do
 		bind_session(match.session, match.thread)
 	end
@@ -1887,8 +1907,9 @@ local function start_backend()
 			end,
 		})
 	end
+	local generation = state.refresh_generation
 	state.backend:start(function(err)
-		if state.shutting_down then
+		if state.shutting_down or generation ~= state.refresh_generation then
 			return
 		end
 		if err then
@@ -1898,6 +1919,9 @@ local function start_backend()
 		state.backend_ready = true
 		state.last_backend_error = nil
 		refresh_threads()
+		if state.recents_tab == "dismissed" then
+			refresh_dismissed_threads()
+		end
 	end)
 end
 
@@ -1911,10 +1935,16 @@ refresh_threads = function()
 	end
 
 	state.refreshing = true
+	local generation = state.refresh_generation
+	local backend = state.backend
+	local status_revision = backend._status_revision
 	local scope = project_key(state.project)
 	local request_uses_state_db = state.history_repaired
 	local request_params = request_uses_state_db and { archived = false, useStateDbOnly = true } or { archived = false }
 	local function receive_threads(err, threads)
+		if generation ~= state.refresh_generation then
+			return
+		end
 		state.refreshing = false
 		if state.shutting_down then
 			return
@@ -1937,6 +1967,11 @@ refresh_threads = function()
 			return
 		end
 		state.last_backend_error = nil
+		-- Identity lookups may outlive the list request. Preserve status events
+		-- received during those lookups as well as during pagination.
+		if backend.reconcile_statuses then
+			backend:reconcile_statuses(threads, status_revision)
+		end
 
 		local unresolved = associate_pending_sessions(threads)
 		local previous = state.threads
@@ -1969,8 +2004,14 @@ refresh_threads = function()
 					end
 				end
 				if session then
+					local running = terminal_running(session)
+					if not running and session.job_id and not session.active_elsewhere
+						and session.frontend_status ~= "error"
+					then
+						session.frontend_status = "closed"
+					end
 					local status = normalize(thread.status)
-					if type(status) == "table" and status.type ~= "notLoaded" then
+					if not running or (type(status) == "table" and status.type ~= "notLoaded") then
 						session.default_status = "ready"
 					end
 					if session.unread ~= nil and not external_activity then
@@ -1979,9 +2020,16 @@ refresh_threads = function()
 					if session.activity_at then
 						thread._activity_at = session.activity_at
 					end
+					if session.active_elsewhere and type(status) == "table" and status.type == "notLoaded" then
+						session.active_elsewhere = false
+						session.retry_after = nil
+						session.frontend_status = "closed"
+					end
 					if session.active_elsewhere then
 						thread._local_status = "active"
-					elseif terminal_running(session) then
+					elseif running then
+						thread._local_status = session.frontend_status
+					elseif session.frontend_status == "closed" or session.frontend_status == "error" then
 						thread._local_status = session.frontend_status
 					end
 				end
@@ -2002,6 +2050,9 @@ refresh_threads = function()
 				old._missing_count = (old._missing_count or 0) + 1
 				if terminal_running(state.sessions[id]) or old._missing_count <= 2 then
 					next_threads[id] = old
+				elseif not state.sessions[id].closing then
+					state.sessions[id].closing = true
+					finish_session_close(state.sessions[id])
 				end
 			end
 		end
@@ -2022,12 +2073,15 @@ refresh_threads = function()
 		vim.schedule(preload_active_threads)
 	end
 	state.backend:list_threads(request_params, function(err, threads)
+		if generation ~= state.refresh_generation then
+			return
+		end
 		if err or state.shutting_down or scope ~= project_key(state.project) then
 			receive_threads(err, threads)
 			return
 		end
-		Identity.prepare(state.sessions, threads, function(id, callback)
-			state.backend:read_thread(id, callback)
+		Identity.prepare(identity_sessions(), threads, function(id, callback)
+			backend:read_thread(id, callback)
 		end, function()
 			receive_threads(nil, threads)
 		end)
@@ -2044,6 +2098,7 @@ refresh_dismissed_threads = function()
 	end
 
 	state.dismissed_refreshing = true
+	local generation = state.refresh_generation
 	render_sidebar()
 	local scope = project_key(state.project)
 	local request_params = { archived = true }
@@ -2051,6 +2106,9 @@ refresh_dismissed_threads = function()
 		request_params.useStateDbOnly = true
 	end
 	state.backend:list_threads(request_params, function(err, threads)
+		if generation ~= state.refresh_generation then
+			return
+		end
 		state.dismissed_refreshing = false
 		if state.shutting_down then
 			return
@@ -2262,6 +2320,39 @@ local function poll_notifications()
 			process_notification(payload, notify_token)
 		end
 	end
+end
+
+function M.resync()
+	if state.shutting_down or not state.project then
+		return
+	end
+	poll_notifications()
+	-- Invalidate in-flight lists before reconnecting the metadata client. The
+	-- shared daemon and its interactive terminals continue running normally.
+	state.refresh_generation = state.refresh_generation + 1
+	state.refreshing = false
+	state.dismissed_refreshing = false
+	state.history_repaired = false
+	state.backend_ready = false
+	for _, session in pairs(state.sessions) do
+		if not terminal_running(session) and not session.closing then
+			session.default_status = "ready"
+			session.active_elsewhere = false
+			session.retry_after = nil
+			if session.frontend_status ~= "error" then
+				session.frontend_status = "closed"
+			end
+			local thread = thread_for_session(session)
+			if thread then
+				thread._local_status = session.frontend_status
+			end
+		end
+	end
+	if state.backend then
+		state.backend:stop()
+	end
+	start_backend()
+	render_sidebar()
 end
 
 local function start_notification_watcher()
@@ -2988,6 +3079,7 @@ local function sidebar_mappings()
 	vim.keymap.set("n", "d", toggle_dismissed, vim.tbl_extend("force", options, {
 		desc = "Dismiss, toggle queued dismissal, or restore Agent Mode recent",
 	}))
+	vim.keymap.set("n", "r", M.resync, vim.tbl_extend("force", options, { desc = "Resync Agent Mode recents" }))
 	vim.keymap.set("n", "f", fork_selected, vim.tbl_extend("force", options, {
 		desc = "Fork and focus Agent Mode chat",
 	}))
@@ -3843,6 +3935,7 @@ function M.setup(options)
 
 	vim.api.nvim_create_user_command("AgentMode", M.open, { desc = "Open Agent Mode recents" })
 	vim.api.nvim_create_user_command("AgentModeNew", M.new_chat, { desc = "Open a new Agent Mode chat" })
+	vim.api.nvim_create_user_command("AgentModeResync", M.resync, { desc = "Resync Agent Mode recents" })
 	vim.api.nvim_create_user_command("AgentModeToggleWorktree", M.toggle_worktree, {
 		desc = "Toggle fresh worktree for new Agent Mode chats",
 	})
