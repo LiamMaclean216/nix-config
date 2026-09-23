@@ -110,6 +110,25 @@ async def focused_window():
     return json.loads(await command("hyprctl", "activewindow", "-j")).get("address")
 
 
+async def microphone_args():
+    preferred = os.environ.get("VOICE_INPUT_MICROPHONE", "").strip()
+    if not preferred:
+        return []
+    try:
+        nodes = json.loads(await command("pw-dump", timeout=2))
+    except (DictationError, OSError, ValueError, TimeoutError):
+        return []
+    for node in nodes:
+        props = node.get("info", {}).get("props", {})
+        if (
+            props.get("media.class") == "Audio/Source"
+            and props.get("node.name") == preferred
+        ):
+            return ["--target", preferred]
+    # No explicit target lets PipeWire choose the current system default.
+    return []
+
+
 async def send_shortcut(modifiers, key, target):
     # Only compositor addresses and fixed key names enter the Lua expression;
     # dictated text travels exclusively through wl-copy's stdin.
@@ -194,7 +213,7 @@ class Session:
             await self.recorder.wait()
             if not self.released.is_set():
                 raise DictationError(
-                    "Microphone stopped. Check your default input device."
+                    "Microphone stopped. Check your input device."
                 )
             queue.put_nowait(None)
         except asyncio.QueueFull:
@@ -232,8 +251,10 @@ class Session:
         try:
             key = read_key()
             self.ui("show", "Listening…")
+            input_args = await microphone_args()
             self.recorder = await asyncio.create_subprocess_exec(
                 "pw-record",
+                *input_args,
                 "--raw",
                 "--format",
                 "s16",

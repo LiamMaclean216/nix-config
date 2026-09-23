@@ -1,5 +1,7 @@
 {pkgs, ...}: let
   voiceInput = pkgs.callPackage ./voice-input {};
+  # PipeWire node.name; use "" to always follow the system default microphone.
+  preferredMicrophone = "alsa_input.usb-Sonix_Technology_Co.__Ltd._USB_2.0_Camera_SN0001-02.mono-fallback";
 in {
   home.packages = [voiceInput];
 
@@ -11,6 +13,7 @@ in {
     };
     Service = {
       ExecStart = "${voiceInput}/bin/voice-input daemon";
+      Environment = ["VOICE_INPUT_MICROPHONE=${preferredMicrophone}"];
       Restart = "on-failure";
       RestartSec = 2;
       UMask = "0077";

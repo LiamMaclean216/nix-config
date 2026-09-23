@@ -212,7 +212,9 @@ in
         };
         "11-bluetooth-policy" = {
           "wireplumber.settings" = {
-            "bluetooth.autoswitch-to-headset-profile" = false;
+            # Use HFP when an app opens the AirPods mic, then return to A2DP.
+            # A2DP provides high-quality playback but has no microphone channel.
+            "bluetooth.autoswitch-to-headset-profile" = true;
             "device.restore-profile" = false;
           };
         };
@@ -227,9 +229,11 @@ in
               actions = {
                 "update-props" = {
                   priorities = [
+                    "a2dp-sink-aac"
                     "a2dp-sink"
                     "a2dp-sink-sbc_xq"
                     "a2dp-sink-sbc"
+                    "headset-head-unit-msbc"
                     "headset-head-unit"
                     "headset-head-unit-cvsd"
                   ];
