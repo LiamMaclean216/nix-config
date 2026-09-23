@@ -28,6 +28,10 @@ in
   # env vars configured later alongside Wayland tweaks
   hardware.bluetooth = {
     enable = true;
+    # BlueZ 5.80 leaves Disconnect/RemoveDevice pending when the controller
+    # returns MGMT_STATUS_DISCONNECTED (0x0e), as seen after Corne BT_CLR.
+    # The pinned unstable BlueZ (5.87) handles that as already disconnected.
+    package = pkgs-unstable.bluez;
     powerOnBoot = true;
     settings = {
       General = {
@@ -39,6 +43,9 @@ in
         # 'false'.
         FastConnectable = true;
         ControllerMode = "dual";
+        # Let Blueman confirm a replacement bond after ZMK BT_CLR.
+        # BlueZ defaults to rejecting peer-initiated Just Works re-pairing.
+        JustWorksRepairing = "confirm";
       };
       Policy = {
         # Enable all controllers when they are found. This includes
@@ -61,7 +68,11 @@ in
   
   # Enable firmware updates for WiFi and other hardware
   hardware.enableRedistributableFirmware = true;
-  hardware.firmware = [ pkgs.linux-firmware ];
+  hardware.firmware = [
+    pkgs.linux-firmware
+    # Firmware for the ASUS/Broadcom Bluetooth adapter (0b05:17cb).
+    pkgs.broadcom-bt-firmware
+  ];
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;

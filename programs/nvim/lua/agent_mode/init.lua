@@ -2,6 +2,8 @@ local Backend = require("config.agent_mode.backend")
 local History = require("config.agent_mode.history")
 local Identity = require("config.agent_mode.identity")
 local Project = require("config.agent_mode.project")
+local Sidebar = require("config.agent_mode.sidebar")
+local Docker = require("config.agent_mode.docker")
 
 local M = {}
 
@@ -45,6 +47,10 @@ local state = {
 	selected_ids = {},
 	order = {},
 	selected_id = nil,
+	sidebar_level = nil,
+	sidebar_worktree = nil,
+	sidebar_action = 1,
+	docker = {},
 	active_id = nil,
 	sessions = {},
 	session_tokens = {},
@@ -85,7 +91,6 @@ local namespace = vim.api.nvim_create_namespace("AgentMode")
 local working_namespace = vim.api.nvim_create_namespace("AgentModeWorking")
 local working_labels = {}
 local codex_backtab = "\27[Z"
-local recents_page_size = 20
 local select_sidebar_row
 
 local function valid_buf(buf)
@@ -323,25 +328,6 @@ local function thread_title(thread)
 	return title:gsub("%s+", " ")
 end
 
-local function preview_lines(text, width)
-	if vim.fn.strdisplaywidth(text) <= width then
-		return { text, "" }
-	end
-	local first, split = "", 0
-	for index = 0, vim.fn.strchars(text) - 1 do
-		local character = vim.fn.strcharpart(text, index, 1)
-		if vim.fn.strdisplaywidth(first .. character) > width then
-			break
-		end
-		first = first .. character
-		split = #first
-	end
-	local word_break = first:match("^.*()%s")
-	if word_break and text:sub(split + 1, split + 1) ~= " " then
-		split = word_break
-	end
-	return { vim.trim(text:sub(1, split)), truncate(vim.trim(text:sub(split + 1)), width) }
-end
 
 local function thread_matches_search(thread)
 	return not state.search_term or (state.search and state.search.matches[thread.id]) or false
@@ -486,6 +472,7 @@ local function displayed_threads()
 end
 
 local function selected_thread()
+	if state.sidebar_level == "worktrees" and vim.api.nvim_get_current_win() == state.sidebar_win then return nil end
 	return state.selected_id and displayed_threads()[state.selected_id] or nil
 end
 
@@ -510,15 +497,17 @@ local function target_summary()
 	return label
 end
 
-local function render_sidebar()
+local render_sidebar
+render_sidebar = function()
 	if not valid_buf(state.sidebar_buf) then
 		return
 	end
 
 	local width = valid_win(state.sidebar_win) and vim.api.nvim_win_get_width(state.sidebar_win) or state.opts.sidebar_width
-	local page = math.floor(((selected_index() or 1) - 1) / recents_page_size)
-	local first = page * recents_page_size + 1
-	local last = math.min(first + recents_page_size - 1, #state.order)
+	local groups = Sidebar.groups(state)
+	local content_width = math.max(1, width - 2)
+	local docker = Docker.supported(state.project)
+	if docker then Docker.refresh(state.project, state.docker, render_sidebar) end
 	if valid_win(state.sidebar_win) then
 		-- The winbar stays above the viewport, independent of buffer scrolling.
 		local active_hl = state.recents_tab == "active" and "AgentModeTabSelected" or "AgentModeTabInactive"
@@ -530,15 +519,21 @@ local function render_sidebar()
 		vim.wo[state.sidebar_win].statusline = state.recents_tab == "active"
 			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [r] resync  [f] fork  [d] dismiss  [D] dismiss all  [q] back"
 			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [r] resync  [f] fork  [d] restore  [q] back"
+		if state.sidebar_level == "worktrees" then
+			vim.wo[state.sidebar_win].statusline = "  [j/k] worktrees  [Enter] select"
+				.. (docker and "  [h/l] action" or "") .. "  [a] rename  [d] remove worktree  [/] filter  [Tab] active/dismissed  [r] resync  [q] back"
+		else
+			vim.wo[state.sidebar_win].statusline = "  [Esc] worktrees" .. vim.wo[state.sidebar_win].statusline
+		end
+		if docker then
+			vim.wo[state.sidebar_win].statusline = vim.wo[state.sidebar_win].statusline:gsub("%[r%] resync", "[r] restart Docker  [Ctrl-r] resync")
+		end
 		if state.search_term and not state.filter then
 			vim.wo[state.sidebar_win].statusline = "  [Esc] clear filter" .. vim.wo[state.sidebar_win].statusline
 		end
-		if #state.order > recents_page_size then
-			vim.wo[state.sidebar_win].statusline = string.format("  %d–%d of %d", first, last, #state.order)
-				.. vim.wo[state.sidebar_win].statusline
-		end
+
 	end
-	local lines = { "" }
+	local lines = {}
 	if state.search_term and not state.filter then
 		table.insert(lines, truncate("  Filter: " .. state.search_term, width - 1))
 		table.insert(lines, "")
@@ -548,90 +543,173 @@ local function render_sidebar()
 	local now = os.time()
 	local cursor_rows = {}
 	local row_threads = {}
+	local group_rows, row_groups, group_decorations = {}, {}, {}
+	local function group_header(group)
+		local path = group.worktree.path
+		local selected = state.sidebar_worktree == path
+		local first_row = #lines + 1
+		local spans = {}
+		local function span(row, first, last, hl)
+			table.insert(spans, { row = row, first = first, last = last, hl = hl })
+		end
+		local count = string.format("%d %s", #group.threads, #group.threads == 1 and "run" or "runs")
+		local title = " " .. truncate(group.worktree.label or vim.fs.basename(path), math.max(1, content_width - #count - 3))
+		local gap = string.rep(" ", math.max(1, content_width - vim.fn.strdisplaywidth(title) - #count - 1))
+		table.insert(lines, title .. gap .. count .. " ")
+		span(#lines, 0, #title, "AgentModeWorktree")
+		span(#lines, #title + #gap, -1, "AgentModeMuted")
+		if docker then
+			local label = Docker.label(state.docker, path)
+			local status, address = label:match("^(.-) · (localhost:%d+)$")
+			local status_hl = ({
+				["Docker running"] = "DiagnosticOk", ["Docker down"] = "AgentModeMuted",
+				["Docker partial"] = "DiagnosticWarn", ["Docker unhealthy"] = "DiagnosticError",
+				["Docker unavailable"] = "DiagnosticWarn",
+			})[status or label] or "DiagnosticInfo"
+			local status_text = status or label
+			if address and vim.fn.strdisplaywidth(status_text .. " " .. address) + 1 > content_width then
+				status_text = status_text:gsub("^Docker ", "")
+				status_text = truncate(status_text, math.max(1, content_width - #address - 2))
+			end
+			local text = " " .. status_text .. (address and " " .. address or "")
+			table.insert(lines, truncate(text, content_width))
+			span(#lines, 1, 1 + #status_text, status_hl)
+			if address then span(#lines, 2 + #status_text, -1, "AgentModePort") end
+		end
+		if selected and state.sidebar_level == "worktrees" then
+			local actions = docker and { "Enter", "Docker up", "Docker down" } or { "Enter" }
+			local highlights = { "Enter", "Up", "Down" }
+			local labels = {}
+			for i, action in ipairs(actions) do
+				labels[i] = i == state.sidebar_action and ("[" .. action .. "]") or (" " .. action .. " ")
+			end
+			local action_line = " " .. table.concat(labels, " ")
+			local action_row = #lines + 1
+			if vim.fn.strdisplaywidth(action_line) > content_width then
+				action_line = " ‹ " .. labels[state.sidebar_action] .. " ›"
+				local first = #" ‹ "
+				span(action_row, first, first + #labels[state.sidebar_action],
+					"AgentModeAction" .. highlights[state.sidebar_action] .. "Selected")
+			else
+				local first = 1
+				for i, label in ipairs(labels) do
+					span(action_row, first, first + #label,
+						"AgentModeAction" .. highlights[i] .. (i == state.sidebar_action and "Selected" or ""))
+					first = first + #label + 1
+				end
+			end
+			table.insert(lines, truncate(action_line, content_width))
+		end
+		group_rows[path] = first_row
+		for row = first_row, #lines do row_groups[row] = path end
+		table.insert(group_decorations, { first = first_row, last = #lines, spans = spans,
+			selected = selected })
+	end
+	for _, group in ipairs(groups) do
+		local border_first = #lines + 1
+		table.insert(lines, "╭" .. string.rep("─", content_width) .. "╮")
+		group_header(group)
+		local decoration = group_decorations[#group_decorations]
+		decoration.first = border_first
+		row_groups[border_first] = group.worktree.path
+		local order = group.threads
 
-	if #state.order == 0 then
-		local empty_message
-		if state.search and state.search.pending[state.recents_tab] then
-			empty_message = "  Searching conversations…"
-		elseif state.search and state.search.errors[state.recents_tab] then
-			empty_message = "  Search failed; press / to retry"
-		elseif state.search_term then
-			empty_message = state.recents_tab == "active"
-				and "  No matching active conversations"
-				or "  No matching dismissed conversations"
+		if #order == 0 then
+			local empty_message
+			if state.search and state.search.pending[state.recents_tab] then
+				empty_message = "  Searching conversations…"
+			elseif state.search and state.search.errors[state.recents_tab] then
+				empty_message = "  Search failed; press / to retry"
+			elseif state.search_term then
+				empty_message = state.recents_tab == "active"
+					and "  No matching active conversations"
+					or "  No matching dismissed conversations"
+			else
+				empty_message = state.recents_tab == "active"
+					and "  No active conversations"
+					or "  No dismissed conversations"
+			end
+			table.insert(lines, empty_message)
 		else
-			empty_message = state.recents_tab == "active"
-				and "  No active conversations"
-				or "  No dismissed conversations"
-		end
-		table.insert(lines, empty_message)
-	else
-		-- Navigation crosses pages automatically; only format and highlight this page.
-		for index = first, last do
-			local thread = state.order[index]
-			local status = status_name(thread)
-			local updated = thread_time(thread)
-			local date = relative_date(updated, now)
-			local unread = thread._unread and "● " or "  "
-			local worktree = state.project and Project.worktree_for(state.project, thread.cwd or "") or nil
-			local first_row = #lines + 1
+			for _, thread in ipairs(order) do
+				local status = status_name(thread)
+				local updated = thread_time(thread)
+				local date = relative_date(updated, now)
+				local selected = state.sidebar_level == "runs" and thread.id == state.selected_id
+					and not (state.composer and valid_win(state.composer.win))
+				local marker = selected and "› " or "  "
+				local run_icon = thread._unread and "◆" or (status_icons[status] or "●")
+				local first_row = #lines + 1
 
-			local preview = preview_lines(thread_title(thread), math.max(1, width - 4))
-			table.insert(lines, unread .. preview[1])
-			if preview[2] ~= "" then
-				table.insert(lines, "  " .. preview[2])
-			end
-			local title_last = #lines
-			local label = status:sub(1, 1):upper() .. status:sub(2)
-			local icon = status_icons[status]
-			local status_text = (icon and icon .. " " or "") .. label
-			local metadata = (status == "saved" or status == "loading") and date or status_text .. " · " .. date
-			if thread._dismiss_queued then
-				metadata = metadata .. " · Queued to dismiss"
-			end
-			table.insert(lines, truncate("  " .. metadata, width - 2))
-			local metadata_row = #lines
-			if status == "working" and width >= 11 then
-				table.insert(working_labels, { row = metadata_row - 1, col = 2 })
-			end
-			if worktree and state.project.common_dir
-				and (not worktree.branch or worktree.branch ~= state.project.default_branch)
-			then
-				local label = worktree.label or vim.fs.basename(worktree.path)
-				table.insert(lines, truncate("  ↳ " .. label, width - 2))
-			end
-			local last_row = #lines
-			table.insert(lines, "")
+				table.insert(lines, marker .. run_icon .. " " .. truncate(thread_title(thread), math.max(1, content_width - 4)))
+				local title_last = #lines
+				local label = status:sub(1, 1):upper() .. status:sub(2)
+				local icon = status_icons[status]
+				local status_text = (icon and icon .. " " or "") .. label
+				local metadata = (status == "saved" or status == "loading") and date or status_text .. " · " .. date
+				if thread._dismiss_queued then
+					metadata = metadata .. " · Queued to dismiss"
+				end
+				table.insert(lines, truncate("    " .. metadata, content_width))
+				local metadata_row = #lines
+				if status == "working" and content_width >= 11 then
+					table.insert(working_labels, { row = metadata_row - 1, col = #"│" + 4 })
+				end
 
-			cursor_rows[thread.id] = first_row
-			for row = first_row, last_row do
-				row_threads[row] = thread.id
+				local last_row = #lines
+
+				cursor_rows[thread.id] = first_row
+				for row = first_row, last_row do
+					row_threads[row] = thread.id
+				end
+				table.insert(decorations, {
+					first = first_row,
+					last = last_row,
+					title_last = title_last,
+					metadata_row = metadata_row,
+					status_end = #"│" + math.min(#lines[metadata_row], 4 + #status_text),
+					status = status,
+					marker_end = #"│" + #marker,
+					icon_end = #"│" + #marker + #run_icon,
+					unread = thread._unread,
+					selected = selected,
+				})
 			end
-			table.insert(decorations, {
-				first = first_row,
-				last = last_row,
-				title_last = title_last,
-				metadata_row = metadata_row,
-				status_end = math.min(#lines[metadata_row], 2 + #status_text),
-				status = status,
-				selected = thread.id == state.selected_id
-					and not (state.composer and valid_win(state.composer.win)),
-			})
 		end
+
+		-- Every group stays expanded; the navigation level only changes what j/k selects.
+		for _, span in ipairs(decoration.spans) do
+			local length = #lines[span.row]
+			span.first = #"│" + math.min(span.first, length)
+			span.last = #"│" + (span.last == -1 and length or math.min(span.last, length))
+		end
+		for row = border_first + 1, #lines do
+			local text = truncate(lines[row], content_width)
+			lines[row] = "│" .. text .. string.rep(" ", math.max(0, content_width - vim.fn.strdisplaywidth(text))) .. "│"
+		end
+		table.insert(lines, "╰" .. string.rep("─", content_width) .. "╯")
+		decoration.last = #lines
+		row_groups[#lines] = group.worktree.path
 	end
 
 	local footer = {
-		"",
+		"  " .. string.rep("─", math.max(1, width - 4)),
+		state.worktree_sync_error and "  Worktree sync failed; retrying…" or "",
 		truncate("  New chat: " .. target_summary(), width - 1),
 		"  [Ctrl-W] select existing worktree",
 		"  [Ctrl-T/W] move chat to new worktree",
 		"  [w] cycle existing worktree",
 		"",
-		"  [j/k/↓/↑] move  [gg/G] first/last",
+		state.sidebar_level == "worktrees" and "  [j/k] worktrees  [Enter] select" or "  [j/k] runs  [Esc] worktrees",
+		docker and "  [h/l] Enter / Docker up / down" or "",
+		docker and "  [r] restart Docker  [Ctrl-r] resync" or "  [r/Ctrl-r] resync",
+		"  [gg/G] first/last",
 		"  [Tab/[/]] switch recents tab",
 		"  [/] filter  [Esc] clear filter",
 		state.recents_tab == "active" and "  [Enter/i/I] open chat" or "  [Enter] restore and open chat",
-		state.recents_tab == "active" and "  [d] dismiss  [D] dismiss all" or "  [i/I] preview  [d] restore",
+		state.sidebar_level == "worktrees" and "  [d] remove worktree (keep branch)"
+			or (state.recents_tab == "active" and "  [d] dismiss  [D] dismiss all" or "  [i/I] preview  [d] restore"),
+		state.sidebar_level == "worktrees" and "  [a] rename worktree / branch" or "",
 		state.recents_tab == "active" and "  Working: d/D toggle dismiss queue" or "",
 		"  [f] fork and focus chat",
 		"  [q] back",
@@ -648,9 +726,11 @@ local function render_sidebar()
 	for _ = #lines + #footer + 1, height do
 		table.insert(lines, "")
 	end
+	local footer_start = #lines + 1
 	vim.list_extend(lines, footer)
 	state.cursor_rows = cursor_rows
 	state.row_threads = row_threads
+	state.group_rows, state.row_groups = group_rows, row_groups
 
 	vim.bo[state.sidebar_buf].modifiable = true
 	vim.api.nvim_buf_set_lines(state.sidebar_buf, 0, -1, false, lines)
@@ -659,25 +739,54 @@ local function render_sidebar()
 
 	for _, decoration in ipairs(decorations) do
 		for row = decoration.first, decoration.last do
-			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace,
-				row <= decoration.title_last and "AgentModeTitle" or "Comment", row - 1, 0, -1)
-			if decoration.selected then
-				-- A line highlight also fills the cells past EOL, keeping every
-				-- line of the hovered conversation the same rectangular width.
-				vim.api.nvim_buf_set_extmark(state.sidebar_buf, namespace, row - 1, 0, {
-					line_hl_group = "AgentModeSelected", priority = 90,
-				})
-			end
+			local hl = row <= decoration.title_last
+				and (decoration.selected and "AgentModeRunSelected" or "AgentModeTitle") or "Comment"
+			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, hl, row - 1, #"│", #lines[row] - #"│")
+		end
+		vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace,
+			decoration.unread and "DiagnosticWarn" or (status_highlights[decoration.status] or "Comment"),
+			decoration.first - 1, decoration.marker_end, decoration.icon_end)
+		if decoration.selected then
+			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, "AgentModeRunSelected",
+				decoration.first - 1, #"│", decoration.marker_end)
 		end
 		if decoration.status ~= "saved" and decoration.status ~= "loading" then
 			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace,
 				status_highlights[decoration.status] or "Comment",
-				decoration.metadata_row - 1, 2, decoration.status_end)
+				decoration.metadata_row - 1, #"│" + 4, decoration.status_end)
 		end
 	end
 
+	for _, decoration in ipairs(group_decorations) do
+		local border_hl = decoration.selected and "AgentModeWorktreeBorderSelected" or "AgentModeWorktreeBorder"
+		for row = decoration.first, decoration.last do
+			if row == decoration.first or row == decoration.last then
+				vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, border_hl, row - 1, 0, -1)
+			else
+				vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, border_hl, row - 1, 0, #"│")
+				vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, border_hl, row - 1, #lines[row] - #"│", -1)
+			end
+		end
+		for _, span in ipairs(decoration.spans) do
+			if span.last > span.first then
+				vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, span.hl, span.row - 1, span.first, span.last)
+			end
+		end
+	end
+	for row = footer_start, #lines do
+		vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, "AgentModeMuted", row - 1, 0, -1)
+		local offset = 1
+		while true do
+			local first, last = lines[row]:find("%b[]", offset)
+			if not first then break end
+			vim.api.nvim_buf_add_highlight(state.sidebar_buf, namespace, "AgentModeKey", row - 1, first - 1, last)
+			offset = last + 1
+		end
+	end
 	render_working_animation()
-	if valid_win(state.sidebar_win) and state.selected_id and cursor_rows[state.selected_id] then
+	if valid_win(state.sidebar_win) and state.sidebar_level == "worktrees" and group_rows[state.sidebar_worktree] then
+		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { group_rows[state.sidebar_worktree], 1 })
+	elseif valid_win(state.sidebar_win) and state.selected_id and cursor_rows[state.selected_id] then
 		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { cursor_rows[state.selected_id], 1 })
 	end
 end
@@ -1034,7 +1143,9 @@ focus_recents = function()
 		end
 		M.open_selected(false)
 	end
-	local row = state.selected_id and state.cursor_rows and state.cursor_rows[state.selected_id]
+	render_sidebar()
+	local row = state.sidebar_level == "worktrees" and state.group_rows[state.sidebar_worktree]
+		or (state.selected_id and state.cursor_rows and state.cursor_rows[state.selected_id])
 	if row then
 		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { row, 1 })
 	end
@@ -1784,6 +1895,18 @@ sort_threads = function()
 	end
 	if not remembered_id or not visible[remembered_id] then
 		remembered_id = state.order[1] and state.order[1].id or nil
+		if state.sidebar_level == "runs" and state.sidebar_worktree
+			and Project.worktree_for(state.project, state.sidebar_worktree)
+		then
+			remembered_id = nil
+			for _, thread in ipairs(state.order) do
+				local worktree = Project.worktree_for(state.project, thread.cwd)
+				if worktree and worktree.path == state.sidebar_worktree then
+					remembered_id = thread.id
+					break
+				end
+			end
+		end
 	end
 	state.selected_id = remembered_id
 	state.selected_ids[state.recents_tab] = remembered_id
@@ -2152,6 +2275,39 @@ refresh_dismissed_threads = function()
 	end)
 end
 
+local function refresh_project_state(refresh_runs)
+	local project = state.project
+	if not project or project.worktrees_refreshing then return end
+	local revision = project.worktree_revision
+	project.worktrees_refreshing = true
+	Project.refresh_worktrees(project, function(worktrees, err)
+		project.worktrees_refreshing = nil
+		if state.project ~= project or state.shutting_down or project.worktree_revision ~= revision then return end
+		state.worktree_sync_error = err
+		local changed = worktrees and not vim.deep_equal(project.worktrees, worktrees)
+		if worktrees then
+			local target = current_target()
+			local previous_count = #project.worktrees
+			project.worktrees = worktrees
+			state.new_target = 1
+			for index, worktree in ipairs(worktrees) do
+				if target and target.path == worktree.path then state.new_target = index end
+			end
+			if #worktrees ~= previous_count and (#worktrees == 1 or previous_count == 1) then
+				state.sidebar_level = #worktrees == 1 and "runs" or "worktrees"
+			end
+			sort_threads()
+		end
+		-- Discover worktrees before fetching runs so new worktrees pass containment checks.
+		if refresh_runs ~= false or changed then
+			refresh_threads()
+			if state.recents_tab == "dismissed" then refresh_dismissed_threads() end
+		end
+		render_sidebar()
+	end)
+	Docker.refresh(project, state.docker, render_sidebar)
+end
+
 local function start_refresh_timer()
 	if state.refresh_timer then
 		return
@@ -2159,7 +2315,7 @@ local function start_refresh_timer()
 	state.refresh_timer = vim.uv.new_timer()
 	state.refresh_timer:start(state.opts.refresh_interval, state.opts.refresh_interval, vim.schedule_wrap(function()
 		if valid_tab(state.tab) or next(state.sessions) ~= nil then
-			refresh_threads()
+			refresh_project_state()
 		end
 	end))
 end
@@ -2352,6 +2508,8 @@ function M.resync()
 		state.backend:stop()
 	end
 	start_backend()
+	state.docker.checked = nil
+	refresh_project_state(false)
 	render_sidebar()
 end
 
@@ -2405,21 +2563,29 @@ local function show_composer()
 end
 
 local function move_selection(delta)
-	if #state.order == 0 then
+	local groups, group = Sidebar.groups(state)
+	if state.sidebar_level == "worktrees" then
+		local index = 1
+		for i, item in ipairs(groups) do if item == group then index = i end end
+		group = groups[math.max(1, math.min(#groups, index + delta))]
+		if group then state.sidebar_worktree = group.worktree.path end
+		state.sidebar_action = 1
+		render_sidebar()
 		return
 	end
-	local index = selected_index() or 1
-	index = math.max(1, math.min(#state.order, index + delta))
-	local selected_id = state.order[index].id
-	if state.selected_id == selected_id then
-		return
-	end
-	state.selected_id = selected_id
+	local order = group and group.threads or {}
+	if #order == 0 then return end
+	local index = 1
+	for i, thread in ipairs(order) do if thread.id == state.selected_id then index = i end end
+	index = math.max(1, math.min(#order, index + delta))
+	if state.selected_id == order[index].id then return end
+	state.selected_id = order[index].id
 	render_sidebar()
 	M.preload_selected()
 end
 
 function M.preload_selected()
+	if state.sidebar_level == "worktrees" then return end
 	if not state.selected_id or not valid_win(state.chat_win) then
 		return
 	end
@@ -2431,6 +2597,7 @@ function M.preload_selected()
 	state.preview_timer:start(state.opts.preview_delay, 0, vim.schedule_wrap(function()
 		if state.shutting_down
 			or state.selected_id ~= selected_id
+			or state.sidebar_level == "worktrees"
 			or not valid_win(state.sidebar_win)
 			or not valid_win(state.chat_win)
 		then
@@ -2441,10 +2608,20 @@ function M.preload_selected()
 end
 
 select_sidebar_row = function(row)
+	local path = state.row_groups and state.row_groups[row]
+	if path then
+		if state.sidebar_worktree ~= path or state.sidebar_level ~= "worktrees" then
+			state.sidebar_worktree, state.sidebar_level, state.sidebar_action = path, "worktrees", 1
+			render_sidebar()
+		end
+		return
+	end
 	local selected_id = state.row_threads and state.row_threads[row] or nil
 	if not selected_id then
 		return
 	end
+	local changed_level = state.sidebar_level ~= "runs"
+	state.sidebar_level = "runs"
 	local thread = state.threads[selected_id] or state.dismissed_threads[selected_id]
 	local cleared_unread = thread and thread._unread
 	if cleared_unread then
@@ -2455,7 +2632,7 @@ select_sidebar_row = function(row)
 		end
 	end
 	if selected_id == state.selected_id then
-		if cleared_unread then
+		if cleared_unread or changed_level then
 			render_sidebar()
 		end
 		return
@@ -3045,6 +3222,92 @@ function M.toggle_worktree()
 	update_composer_frame()
 end
 
+local function remove_selected_worktree()
+	local project = state.project
+	local _, group = Sidebar.groups(state)
+	if not project or not project.common_dir or not group or project.removing_worktree or project.renaming_worktree then return end
+	local worktree = vim.deepcopy(group.worktree)
+	worktree.docker = Docker.supported(project)
+	local docker_cache = state.docker
+	if project.worktrees[1].path == worktree.path then
+		notify("The main worktree cannot be removed", vim.log.levels.WARN)
+		return
+	end
+	local function busy()
+		for _, thread in pairs(state.threads) do
+			local tree = Project.worktree_for(project, thread.cwd)
+			local status = status_name(thread)
+			if tree and tree.path == worktree.path and (status == "working" or status == "approval" or status == "input") then
+				notify("Stop the active runs in this worktree before removing it", vim.log.levels.WARN)
+				return true
+			end
+		end
+		return false
+	end
+	if busy() then return end
+	project.removing_worktree = worktree.path
+	Sidebar.confirm_remove(worktree, function(confirmed)
+		if not confirmed or state.project ~= project or state.shutting_down or busy() then
+			project.removing_worktree = nil
+			return
+		end
+		Project.remove_worktree(project, worktree, function(err, branch)
+			project.removing_worktree = nil
+			if err then notify("Could not remove worktree: " .. err, vim.log.levels.WARN); return end
+			notify("Removed worktree. Local branch kept: " .. branch)
+			if state.project ~= project or state.shutting_down then return end
+			project.worktree_revision = (project.worktree_revision or 0) + 1
+			for _, session in pairs(state.sessions) do
+				local tree = Project.worktree_for(project, session.cwd)
+				if tree and tree.path == worktree.path then close_session(session, function() end) end
+			end
+			local target = current_target()
+			project.worktrees = vim.tbl_filter(function(tree) return tree.path ~= worktree.path end, project.worktrees)
+			local fallback = project.worktrees[1]
+			if project.current_worktree == worktree.path and fallback then
+				project.current_worktree, project.launch_cwd = fallback.path, fallback.path
+			end
+			state.new_target = 1
+			for index, tree in ipairs(project.worktrees) do
+				if target and tree.path == target.path then state.new_target = index end
+			end
+			sort_threads()
+			render_sidebar()
+			refresh_project_state()
+		end, worktree.docker and function(done)
+			Docker.destroy(worktree.path, docker_cache, render_sidebar, done)
+		end or nil)
+	end)
+end
+
+local function rename_selected_worktree()
+	if state.sidebar_level ~= "worktrees" then return end
+	local project = state.project
+	local _, group = Sidebar.groups(state)
+	if not project or not project.common_dir or not group or project.removing_worktree or project.renaming_worktree then return end
+	local worktree = vim.deepcopy(group.worktree)
+	project.renaming_worktree = worktree.path
+	vim.ui.input({ prompt = "Rename worktree / branch: ", default = worktree.branch or vim.fs.basename(worktree.path) }, function(name)
+		if state.project ~= project or state.shutting_down or not name or vim.trim(name) == "" then
+			project.renaming_worktree = nil
+			return
+		end
+		name = vim.trim(name)
+		Project.rename_worktree(project, worktree, name, function(err, branch)
+			project.renaming_worktree = nil
+			if err then notify("Could not rename worktree: " .. err, vim.log.levels.WARN); return end
+			if state.project ~= project or state.shutting_down then return end
+			project.worktree_revision = (project.worktree_revision or 0) + 1
+			for _, tree in ipairs(project.worktrees) do
+				if tree.path == worktree.path then tree.branch, tree.label = branch, branch end
+			end
+			if project.default_branch == worktree.branch then project.default_branch = branch end
+			update_composer_frame()
+			refresh_project_state()
+		end)
+	end)
+end
+
 local function sidebar_mappings()
 	local options = { buffer = state.sidebar_buf, silent = true, nowait = true }
 	vim.keymap.set("n", "j", function()
@@ -3065,8 +3328,11 @@ local function sidebar_mappings()
 	vim.keymap.set("n", "<Esc>", function()
 		if state.search_term then
 			finish_recents_filter(false)
+		else
+			state.sidebar_level, state.sidebar_action = "worktrees", 1
+			render_sidebar()
 		end
-	end, vim.tbl_extend("force", options, { desc = "Clear Agent Mode recents filter" }))
+	end, vim.tbl_extend("force", options, { desc = "Clear filter or return to worktrees" }))
 	vim.keymap.set("n", "<Tab>", toggle_recents_tab, vim.tbl_extend("force", options, {
 		desc = "Switch Agent Mode recents tab",
 	}))
@@ -3076,31 +3342,58 @@ local function sidebar_mappings()
 	vim.keymap.set("n", "]", function()
 		cycle_recents_tab(1)
 	end, vim.tbl_extend("force", options, { desc = "Show next Agent Mode recents tab" }))
-	vim.keymap.set("n", "d", toggle_dismissed, vim.tbl_extend("force", options, {
-		desc = "Dismiss, toggle queued dismissal, or restore Agent Mode recent",
+	vim.keymap.set("n", "d", function()
+		if state.sidebar_level == "worktrees" then remove_selected_worktree() else toggle_dismissed() end
+	end, vim.tbl_extend("force", options, {
+		desc = "Remove worktree (keep branch), or dismiss/restore run",
 	}))
-	vim.keymap.set("n", "r", M.resync, vim.tbl_extend("force", options, { desc = "Resync Agent Mode recents" }))
+	vim.keymap.set("n", "r", function()
+		if Docker.supported(state.project) then
+			local _, group = Sidebar.groups(state)
+			if group and state.project.removing_worktree ~= group.worktree.path then
+				Docker.run(group.worktree.path, "restart", state.docker, render_sidebar, notify)
+			end
+		else
+			M.resync()
+		end
+	end, vim.tbl_extend("force", options, { desc = "Restart worktree Docker (resync for other projects)" }))
+	vim.keymap.set("n", "<C-r>", M.resync, vim.tbl_extend("force", options, { desc = "Resync Agent Mode recents" }))
+	vim.keymap.set("n", "a", rename_selected_worktree, vim.tbl_extend("force", options, { desc = "Rename worktree / branch" }))
 	vim.keymap.set("n", "f", fork_selected, vim.tbl_extend("force", options, {
 		desc = "Fork and focus Agent Mode chat",
 	}))
 	vim.keymap.set("n", "D", dismiss_all, vim.tbl_extend("force", options, {
 		desc = "Dismiss idle recents and toggle queued dismissal for working recents",
 	}))
-	vim.keymap.set("n", "gg", function()
-		if state.order[1] then
-			state.selected_id = state.order[1].id
-			render_sidebar()
-			M.preload_selected()
-		end
-	end, options)
-	vim.keymap.set("n", "G", function()
-		if state.order[#state.order] then
-			state.selected_id = state.order[#state.order].id
-			render_sidebar()
-			M.preload_selected()
-		end
-	end, options)
+	vim.keymap.set("n", "gg", function() move_selection(-math.huge) end, options)
+	vim.keymap.set("n", "G", function() move_selection(math.huge) end, options)
+	for key, delta in pairs({ h = -1, l = 1 }) do
+		vim.keymap.set("n", key, function()
+			if state.sidebar_level == "worktrees" and Docker.supported(state.project) then
+				state.sidebar_action = ((state.sidebar_action - 1 + delta) % 3) + 1
+				render_sidebar()
+			end
+		end, options)
+	end
 	vim.keymap.set("n", "<CR>", function()
+		if state.sidebar_level == "worktrees" then
+			local _, group = Sidebar.groups(state)
+			if not group or state.project.removing_worktree == group.worktree.path then return end
+			if state.sidebar_action > 1 and Docker.supported(state.project) then
+				Docker.run(group.worktree.path, state.sidebar_action == 2 and "up" or "down",
+					state.docker, render_sidebar, notify)
+			else
+				state.sidebar_level = "runs"
+				state.selected_id = group.threads[1] and group.threads[1].id or nil
+				state.selected_ids[state.recents_tab] = state.selected_id
+				for i, worktree in ipairs(state.project.worktrees) do
+					if worktree.path == group.worktree.path then state.new_target = i end
+				end
+				render_sidebar()
+				M.preload_selected()
+			end
+			return
+		end
 		local thread = selected_thread()
 		if thread and thread._dismissed then
 			restore_and_open_thread(thread)
@@ -3198,6 +3491,9 @@ local function set_project(directory, reset_target)
 		end
 	end
 	if changed then
+		state.sidebar_level, state.sidebar_worktree, state.sidebar_action = nil, nil, 1
+		state.worktree_sync_error = nil
+		state.docker = {}
 		state.chat_buf = nil
 		state.new_worktree = false
 		state.new_worktree_name = nil
@@ -3928,9 +4224,9 @@ function M.setup(options)
 		end,
 	})
 
-	vim.api.nvim_set_hl(0, "AgentModeSelected", { link = "PmenuSel", default = true })
 	vim.api.nvim_set_hl(0, "AgentModeTitle", { bold = true, default = true })
 	setup_tab_highlights()
+	Sidebar.setup_highlights()
 	setup_working_highlights()
 
 	vim.api.nvim_create_user_command("AgentMode", M.open, { desc = "Open Agent Mode recents" })
@@ -3979,6 +4275,7 @@ function M.setup(options)
 		group = group,
 		callback = function()
 			setup_tab_highlights()
+			Sidebar.setup_highlights()
 			setup_working_highlights()
 		end,
 	})

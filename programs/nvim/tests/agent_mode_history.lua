@@ -1,7 +1,7 @@
 -- Run from the repository root:
 -- nvim --headless -u NONE -i NONE -l programs/nvim/tests/agent_mode_history.lua
 local root = vim.fn.getcwd() .. "/programs/nvim/lua/agent_mode/"
-for _, name in ipairs({ "backend", "history", "identity", "project" }) do
+for _, name in ipairs({ "backend", "history", "identity", "project", "sidebar", "docker" }) do
 	package.preload["config.agent_mode." .. name] = function()
 		return dofile(root .. name .. ".lua")
 	end

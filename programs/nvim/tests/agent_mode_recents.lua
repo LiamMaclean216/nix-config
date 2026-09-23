@@ -1,7 +1,7 @@
 -- Run from the repository root:
 -- nvim --headless -u NONE -i NONE -l programs/nvim/tests/agent_mode_recents.lua
 local root = vim.fn.getcwd() .. "/programs/nvim/lua/agent_mode/"
-for _, name in ipairs({ "backend", "history", "identity", "project" }) do
+for _, name in ipairs({ "backend", "history", "identity", "project", "sidebar", "docker" }) do
 	package.preload["config.agent_mode." .. name] = function()
 		return dofile(root .. name .. ".lua")
 	end
@@ -280,8 +280,7 @@ test("inline recents filtering updates both full lists and supports apply, clear
 		assert(#state.dismissed_order == 1)
 		type_query("missing")
 		assert(#state.order == 0 and #state.dismissed_order == 0)
-		assert(table.concat(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false), "\n")
-			:find("No matching active conversations", 1, true))
+		assert(not next(state.cursor_rows), "an empty search must have no selectable runs")
 		type_query("")
 		assert(#state.order == 2 and #state.dismissed_order == 1, "clearing input must restore all cached rows")
 		type_query("beta")
@@ -732,7 +731,7 @@ for _, fresh in ipairs({ true, false }) do
 end
 
 for _, tab in ipairs({ "active", "dismissed" }) do
-	test(tab .. " recents keep the header fixed and paginate keyboard navigation", function()
+	test(tab .. " recents keep all runs expanded and scroll keyboard navigation", function()
 		vim.cmd("tabnew")
 		state.sidebar_win = vim.api.nvim_get_current_win()
 		state.sidebar_buf = vim.api.nvim_create_buf(false, true)
@@ -755,8 +754,7 @@ for _, tab in ipairs({ "active", "dismissed" }) do
 				local row = assert(state.cursor_rows[state.selected_id])
 				assert(vim.api.nvim_win_get_cursor(state.sidebar_win)[1] == row)
 				assert(vim.fn.line("w0") <= row and row <= vim.fn.line("w$"), "selection must stay visible")
-				assert(vim.tbl_count(state.cursor_rows) <= 20, "rendering must stay bounded for long lists")
-				assert(vim.api.nvim_buf_line_count(state.sidebar_buf) < 120)
+				assert(vim.tbl_count(state.cursor_rows) == 1003, "every run must remain inside the expanded worktree")
 				assert(vim.wo[state.sidebar_win].winbar == header, "scrolling must preserve the fixed header")
 				local rendered = vim.api.nvim_eval_statusline(header, { winid = state.sidebar_win, use_winbar = true }).str
 				assert(rendered:find("Active", 1, true) and rendered:find("Dismissed", 1, true))
@@ -768,14 +766,13 @@ for _, tab in ipairs({ "active", "dismissed" }) do
 				vim.fn.maparg("j", "n", false, true).callback()
 				check_selection(index)
 			end
-			assert(vim.wo[state.sidebar_win].statusline:find("21–40 of 1003", 1, true))
 			for index = 25, 1, -1 do
 				vim.fn.maparg("k", "n", false, true).callback()
 				check_selection(index)
 			end
 			vim.fn.maparg("G", "n", false, true).callback()
 			check_selection(1003)
-			assert(vim.tbl_count(state.cursor_rows) == 3, "the final partial page must include the last chat")
+			assert(vim.tbl_count(state.cursor_rows) == 1003, "jumping to the end must keep earlier runs expanded")
 			internals.select_sidebar_row(state.cursor_rows["1001"])
 			check_selection(1001)
 			vim.fn.maparg("gg", "n", false, true).callback()
@@ -801,7 +798,7 @@ test("empty recents stay stable during refreshes of either tab", function()
 				state.search_term = search or nil
 				internals.render_sidebar()
 				local before = vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)
-				assert(before[search and 4 or 2] == "  No " .. (search and "matching " or "") .. tab .. " conversations")
+				assert(not next(state.cursor_rows), "empty worktrees must have no selectable runs")
 				local function unchanged()
 					internals.render_sidebar()
 					assert(vim.deep_equal(before, vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)))
@@ -1713,7 +1710,7 @@ for _, first in ipairs({ "d", "D" }) do
 			local function queued_label()
 				for _, line in ipairs(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)) do
 					if line:find("Queued to dismiss", 1, true) then
-						assert(line:match("Working .*Queued to dismiss$"), "queue label must end the status line")
+						assert(line:match("Working .*Queued to dismiss%s*│$"), "queue label must end the status line")
 						return true
 					end
 				end

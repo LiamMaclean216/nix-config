@@ -99,6 +99,8 @@ local function parse_worktrees(output, current_worktree)
 				entry.head = value
 			elseif entry and key == "branch" then
 				entry.branch = value:gsub("^refs/heads/", "")
+			elseif entry and key == "locked" then
+				entry.locked = value ~= "" and value or true
 			end
 		end
 	end
@@ -163,6 +165,24 @@ function M.discover(start_dir)
 	}
 end
 
+function M.refresh_worktrees(project, callback)
+	if not project or not project.common_dir then callback(nil); return end
+	local function done(result)
+		vim.schedule(function()
+			if result.code ~= 0 then
+				callback(nil, vim.trim(result.stderr or "git worktree list failed"))
+			else
+				callback(parse_worktrees(result.stdout or "", project.current_worktree))
+			end
+		end)
+	end
+	-- The common directory remains usable if the launch worktree was removed.
+	local ok, err = pcall(vim.system,
+		{ "git", "--git-dir", project.common_dir, "worktree", "list", "--porcelain" },
+		{ text = true, timeout = 4000 }, done)
+	if not ok then done({ code = 1, stderr = tostring(err) }) end
+end
+
 local function is_within(path, root)
 	if path == root then
 		return true
@@ -210,6 +230,111 @@ end
 local function callback_later(callback, err, path)
 	vim.schedule(function()
 		callback(err, path)
+	end)
+end
+
+function M.remove_worktree(project, worktree, callback, before_remove)
+	if not project or not project.common_dir then
+		callback_later(callback, "This is not a Git worktree")
+		return
+	end
+	M.refresh_worktrees(project, function(worktrees, err)
+		if err then callback(err); return end
+		local current
+		for index, candidate in ipairs(worktrees or {}) do
+			if candidate.path == worktree.path then
+				if index == 1 then callback("The main worktree cannot be removed"); return end
+				current = candidate
+			end
+		end
+		if not current or current.head ~= worktree.head or current.branch ~= worktree.branch then
+			callback("The worktree changed; review it and try again")
+			return
+		end
+		if current.locked then callback("The worktree is locked"); return end
+		local status, status_err = run({ "git", "-C", current.path, "status", "--porcelain", "--untracked-files=normal" })
+		if not status then callback(status_err); return end
+		if status ~= "" then callback("The worktree has uncommitted or untracked files"); return end
+		local function command(args, done)
+			local argv = vim.list_extend({ "git", "--git-dir", project.common_dir }, args)
+			local ok, process = pcall(vim.system, argv, { text = true }, function(result)
+				vim.schedule(function()
+					local detail = vim.trim(result.stderr or "")
+					done(result.code ~= 0 and (detail ~= "" and detail or "Git command failed") or nil,
+						vim.trim(result.stdout or ""))
+				end)
+			end)
+			if not ok then callback_later(done, tostring(process)) end
+		end
+		local branch = current.branch
+		local function remove()
+			local function finish(cleanup_err)
+				if cleanup_err then callback(cleanup_err, branch); return end
+				-- Never force removal or delete a branch.
+				command({ "worktree", "remove", "--", current.path }, function(remove_err)
+					callback(remove_err, branch)
+				end)
+			end
+			if before_remove then before_remove(finish) else finish() end
+		end
+		if branch then remove(); return end
+		-- Agent Mode creates detached worktrees. Keep their commits reachable too.
+		branch = "worktree/" .. sanitize(basename(current.path)) .. "-" .. current.head:sub(1, 12)
+		command({ "show-ref", "--verify", "--hash", "refs/heads/" .. branch }, function(ref_err, head)
+			if not ref_err then
+				if head ~= current.head then callback("Preservation branch already exists: " .. branch); return end
+				remove()
+			else
+				command({ "branch", "--", branch, current.head }, function(branch_err)
+					if branch_err then callback(branch_err); return end
+					remove()
+				end)
+			end
+		end)
+	end)
+end
+
+function M.rename_worktree(project, worktree, name, callback)
+	if not project or not project.common_dir then
+		callback_later(callback, "This is not a Git worktree")
+		return
+	end
+	if type(name) ~= "string" or name == "" then
+		callback_later(callback, "Enter a branch name")
+		return
+	end
+	local checked, check_err = run({ "git", "-C", worktree.path, "check-ref-format", "--branch", name })
+	if checked ~= name then
+		callback_later(callback, check_err or "Enter a literal branch name")
+		return
+	end
+	M.refresh_worktrees(project, function(worktrees, err)
+		if err then callback(err); return end
+		local current
+		for _, tree in ipairs(worktrees or {}) do
+			if tree.path == worktree.path then current = tree; break end
+		end
+		if not current or current.branch ~= worktree.branch then
+			callback("The worktree branch changed; review it and try again")
+			return
+		end
+		if current.branch == name then callback(nil, name); return end
+		-- Rename the branch, keeping the checkout path stable for runs and Docker.
+		-- Detached worktrees get a branch at their current HEAD without changing files.
+		local args = current.branch and { "branch", "-m", "--", current.branch, name }
+			or { "switch", "-c", name }
+		local function done(result)
+			vim.schedule(function()
+				if result.code ~= 0 then
+					local detail = vim.trim(result.stderr or "")
+					callback(detail ~= "" and detail or "Could not rename the branch")
+				else
+					callback(nil, name)
+				end
+			end)
+		end
+		local ok, process = pcall(vim.system, vim.list_extend({ "git", "-C", current.path }, args), { text = true }, done)
+		if not ok then callback_later(callback, tostring(process)) end
 	end)
 end
 
