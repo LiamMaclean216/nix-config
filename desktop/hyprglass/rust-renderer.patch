@@ -1,0 +1,103 @@
+--- a/src/ShaderManager.hpp
++++ b/src/ShaderManager.hpp
+@@ -45,6 +45,7 @@
+ 
+     SP<CShader>    glassShader = makeShared<CShader>();
+     SGlassUniforms glassUniforms;
++    void* liquidRenderer = nullptr;
+ 
+     SP<CShader>    blurShader = makeShared<CShader>();
+     SBlurUniforms  blurUniforms;
+--- a/src/ShaderManager.cpp
++++ b/src/ShaderManager.cpp
+@@ -1,6 +1,7 @@
+ #include "ShaderManager.hpp"
+ #include "Globals.hpp"
+ #include "Shaders.hpp"
++#include "liquid_glass.h"
+ 
+ #include <GLES3/gl32.h>
+ #include <hyprland/src/helpers/Color.hpp>
+@@ -8,6 +9,8 @@
+ #include <hyprland/src/render/OpenGL.hpp>
+ 
+ std::string CShaderManager::loadShaderSource(const char* fileName) {
++    if (std::string_view(fileName) == "liquidglass.frag")
++        return liquid_glass_shader();
+     if (SHADERS.contains(fileName))
+         return SHADERS.at(fileName);
+ 
+@@ -29,6 +32,8 @@
+     }
+ 
+     const auto program = glassShader->program();
++    liquid_glass_destroy(liquidRenderer);
++    liquidRenderer = liquid_glass_create(program);
+ 
+     glassUniforms.refractionStrength  = glGetUniformLocation(program, "refractionStrength");
+     glassUniforms.chromaticAberration = glGetUniformLocation(program, "chromaticAberration");
+@@ -92,6 +97,8 @@
+ }
+ 
+ void CShaderManager::destroy() noexcept {
++    liquid_glass_destroy(liquidRenderer);
++    liquidRenderer = nullptr;
+     glassShader->destroy();
+     blurShader->destroy();
+     m_initialized = false;
+--- a/src/GlassRenderer.cpp
++++ b/src/GlassRenderer.cpp
+@@ -1,6 +1,7 @@
+ #include "GlassRenderer.hpp"
+ #include "BuiltInPresets.hpp"
+ #include "Globals.hpp"
++#include "liquid_glass.h"
+ 
+ #include <array>
+ #include <GLES3/gl32.h>
+@@ -192,13 +193,15 @@
+     shader->setUniformFloat2(SHADER_FULL_SIZE,
+         static_cast<float>(fullSize.x), static_cast<float>(fullSize.y));
+ 
+-    glUniform1f(uniforms.refractionStrength,  resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength));
+-    glUniform1f(uniforms.chromaticAberration, resolvePresetFloat(resolveContext, &SPresetValues::chromaticAberration, &SOverridableConfig::chromaticAberration));
+-    glUniform1f(uniforms.fresnelStrength,     resolvePresetFloat(resolveContext, &SPresetValues::fresnelStrength, &SOverridableConfig::fresnelStrength));
+-    glUniform1f(uniforms.specularStrength,    resolvePresetFloat(resolveContext, &SPresetValues::specularStrength, &SOverridableConfig::specularStrength));
+-    glUniform1f(uniforms.glassOpacity,        resolvePresetFloat(resolveContext, &SPresetValues::glassOpacity, &SOverridableConfig::glassOpacity) * alpha);
+-    glUniform1f(uniforms.edgeThickness,       resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness));
+-    glUniform1f(uniforms.lensDistortion,      resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion));
++    const LiquidGlassMaterial material{
++        resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength),
++        resolvePresetFloat(resolveContext, &SPresetValues::chromaticAberration, &SOverridableConfig::chromaticAberration),
++        resolvePresetFloat(resolveContext, &SPresetValues::fresnelStrength, &SOverridableConfig::fresnelStrength),
++        resolvePresetFloat(resolveContext, &SPresetValues::specularStrength, &SOverridableConfig::specularStrength),
++        resolvePresetFloat(resolveContext, &SPresetValues::glassOpacity, &SOverridableConfig::glassOpacity) * alpha,
++        resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
++        resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion),
++    };
+ 
+     uploadThemeUniforms(resolveContext);
+ 
+@@ -241,9 +244,9 @@
+     shader->setUniformFloat(SHADER_RADIUS, cornerRadius);
+     shader->setUniformFloat(SHADER_ROUNDING_POWER, roundingPower);
+ 
+-    glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
+     g_pHyprOpenGL->scissor(rawBox);
+-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++    liquid_glass_draw(shaderManager.liquidRenderer, &material,
++                      shader->getUniformLocation(SHADER_SHADER_VAO));
+     g_pHyprOpenGL->scissor(nullptr);
+ }
+ 
+--- a/Makefile
++++ b/Makefile
+@@ -23,7 +23,7 @@
+ 
+ $(TARGET): $(OBJ)
+ 	@echo "Linking $(TARGET)..."
+-	@$(CXX) $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
++	@$(CXX) $(LDFLAGS) $(OBJ) -o $@ $(LIBS) $(LIQUID_GLASS_LIB) -lGLESv2 -ldl -lpthread -lm
+ 	@echo "Done!"
+ 
+ clean:

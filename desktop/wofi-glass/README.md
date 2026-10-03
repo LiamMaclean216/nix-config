@@ -1,16 +1,19 @@
 # Live desktop glass
 
-Super+D opens Wofi with live HyprGlass refraction. The speech-to-text panel uses
+Super+D opens Wofi with the custom Rust liquid-glass material through HyprGlass. The speech-to-text panel uses
 the same material and remains anchored 64 logical pixels above the bottom center.
 Both surfaces keep their text and controls separate from the compositor-rendered
 backdrop. There are no screenshots, temporary backdrop images, or capture loops.
 
-The shared palette and material are configured in `../theme.nix`: a warm charcoal tint, three blur
-iterations, restrained edge refraction and highlights, and background updates
+The shared palette and material are configured in `../theme.nix`: a light charcoal tint, one blur
+iteration, curved-edge refraction, spectral fringes and highlights, and background updates
 capped at 60 fps when the scene changes. The `wofi`, `voice-input`, `waybar`, and
 Wlogout `logout_dialog` layer namespaces are enabled; ordinary windows are excluded.
 GTK supplies the rounded alpha mask. Layout is in `../wofi/style.css` and
 `../voice-input/overlay.py`.
+
+The Rust core and original GPU shader live in `../hyprglass/rust`; see
+`../hyprglass/README.md` for architecture, material controls and rendering tests.
 
 The bottom-right clock uses the same material. Its visibility toggle fades for
 250 ms using GTK's `.hidden` class; the pinned Waybar package is patched to avoid

@@ -35,26 +35,31 @@ rec {
 
   # Shared material for GTK alpha masks, Qt surfaces and the compositor.
   glass = {
-    surfaceOpacity = 0.20;
-    sheen = "linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03))";
+    surfaceOpacity = 0.14;
+    # Lighting comes from the GPU material; GTK supplies only tint and silhouette.
+    sheen = "none";
     compositor = {
       enabled = false;
       manage_window_blur = true;
       default_theme = "dark";
-      blur_strength = 1.6;
-      blur_iterations = 3;
-      refraction_strength = 0.22;
-      chromatic_aberration = 0.06;
-      fresnel_strength = 0.18;
-      specular_strength = 0.22;
+      blur_strength = 0.6;
+      blur_iterations = 1;
+      refraction_strength = 0.65;
+      chromatic_aberration = 0.18;
+      fresnel_strength = 0.55;
+      specular_strength = 0.70;
       glass_opacity = 1.0;
-      edge_thickness = 0.06;
-      # RGBA, matching the existing panels' dense neutral tint.
-      tint_color = "0x${colors.background}b3";
-      lens_distortion = 0.08;
-      brightness = 0.90;
-      saturation = 0.80;
-      adaptive_dim = 0.35;
+      edge_thickness = 0.12;
+      # A light charcoal tint leaves the live refracted scene visible.
+      tint_color = "0x${colors.background}18";
+      lens_distortion = 0.12;
+      brightness = 1.0;
+      contrast = 1.0;
+      saturation = 1.04;
+      vibrancy = 0.12;
+      vibrancy_darkness = 0.0;
+      adaptive_dim = 0.16;
+      adaptive_boost = 0.0;
       layers = {
         enabled = true;
         namespaces = "wofi, voice-input, logout_dialog, waybar";
