@@ -1,0 +1,39 @@
+--- a/include/client.hpp
++++ b/include/client.hpp
+@@ -54,6 +54,8 @@
+   Glib::RefPtr<Gtk::CssProvider> css_provider_;
+   std::unique_ptr<Portal> portal;
+   std::list<struct waybar_output> outputs_;
++  sigc::connection monitor_added_connection_;
++  sigc::connection monitor_removed_connection_;
+   std::unique_ptr<CssReloadHelper> m_cssReloadHelper;
+   std::string m_cssFile;
+ };
+--- a/src/client.cpp
++++ b/src/client.cpp
+@@ -216,8 +216,9 @@
+     auto monitor = gdk_display->get_monitor(i);
+     handleMonitorAdded(monitor);
+   }
+-  gdk_display->signal_monitor_added().connect(sigc::mem_fun(*this, &Client::handleMonitorAdded));
+-  gdk_display->signal_monitor_removed().connect(
++  monitor_added_connection_ = gdk_display->signal_monitor_added().connect(
++      sigc::mem_fun(*this, &Client::handleMonitorAdded));
++  monitor_removed_connection_ = gdk_display->signal_monitor_removed().connect(
+       sigc::mem_fun(*this, &Client::handleMonitorRemoved));
+ }
+ 
+@@ -293,8 +294,13 @@
+   bindInterfaces();
+   gtk_app->hold();
+   gtk_app->run();
++  // SIGUSR2 runs main() again. Retained callbacks otherwise create another
++  // bar on every monitor reconnect for every previous configuration reload.
++  monitor_added_connection_.disconnect();
++  monitor_removed_connection_.disconnect();
+   m_cssReloadHelper.reset();  // stop watching css file
+   bars.clear();
++  outputs_.clear();
+   return 0;
+ }
+ 

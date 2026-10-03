@@ -10,7 +10,10 @@ let
   '';
   # Keep changes local to this launcher; other users of the system Wofi are unaffected.
   wofi = pkgs.wofi.overrideAttrs (old: {
-    patches = (old.patches or []) ++ [ ./dismiss-on-deactivate.patch ];
+    patches = (old.patches or []) ++ [
+      ./dismiss-on-deactivate.patch
+      ./keep-input-focus.patch
+    ];
     postPatch = (old.postPatch or "") + ''
       substituteInPlace src/wofi.c \
         --replace-fail 'zwlr_layer_surface_v1_set_keyboard_interactivity(surface, true);' \

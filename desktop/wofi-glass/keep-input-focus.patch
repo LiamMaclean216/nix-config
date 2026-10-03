@@ -1,0 +1,81 @@
+--- a/src/wofi.c
++++ b/src/wofi.c
+@@ -694,7 +694,6 @@
+ 	if(!user_moved) {
+ 		GtkFlowBoxChild* child = gtk_flow_box_get_child_at_index(GTK_FLOW_BOX(inner_box), 0);
+ 		gtk_flow_box_select_child(GTK_FLOW_BOX(inner_box), child);
+-		gtk_widget_grab_focus(GTK_WIDGET(child));
+ 	}
+ 
+ 	if(GTK_IS_EXPANDER(parent)) {
+@@ -1024,8 +1023,10 @@
+ 
+ static void activate_search(GtkEntry* entry, gpointer data) {
+ 	(void) data;
+-	GtkFlowBoxChild* child = gtk_flow_box_get_child_at_index(GTK_FLOW_BOX(inner_box), 0);
+-	gboolean is_visible = gtk_widget_get_visible(GTK_WIDGET(child));
++	GList* selected = gtk_flow_box_get_selected_children(GTK_FLOW_BOX(inner_box));
++	GtkFlowBoxChild* child = selected == NULL ? NULL : selected->data;
++	g_list_free(selected);
++	gboolean is_visible = child != NULL && gtk_widget_get_visible(GTK_WIDGET(child));
+ 	if(mode != NULL && (exec_search || child == NULL || !is_visible)) {
+ 		execute_action(mode, gtk_entry_get_text(entry));
+ 	} else if(child != NULL) {
+@@ -1166,20 +1167,47 @@
+ 	return 0;
+ }
+ 
+-static void move_up(void) {
++static void move_selection(int direction) {
+ 	user_moved = true;
+-	gtk_widget_child_focus(window, GTK_DIR_UP);
++	GList* selected = gtk_flow_box_get_selected_children(GTK_FLOW_BOX(inner_box));
++	GtkFlowBoxChild* current = selected == NULL ? NULL : selected->data;
++	g_list_free(selected);
++	int index = current == NULL ? -1 : gtk_flow_box_child_get_index(current);
++	if(index < 0 && direction < 0) {
++		GList* children = gtk_container_get_children(GTK_CONTAINER(inner_box));
++		index = g_list_length(children);
++		g_list_free(children);
++	}
++
++	for(index += direction; index >= 0; index += direction) {
++		GtkFlowBoxChild* child = gtk_flow_box_get_child_at_index(GTK_FLOW_BOX(inner_box), index);
++		if(child == NULL) {
++			break;
++		}
++		if(!gtk_widget_get_visible(GTK_WIDGET(child)) || !gtk_widget_get_child_visible(GTK_WIDGET(child))) {
++			continue;
++		}
++		gtk_flow_box_select_child(GTK_FLOW_BOX(inner_box), child);
++		// Keep the selection visible without transferring keyboard focus to it.
++		int x, y;
++		if(gtk_widget_translate_coordinates(GTK_WIDGET(child), scroll, 0, 0, &x, &y)) {
++			GtkAdjustment* adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll));
++			double top = gtk_adjustment_get_value(adjustment) + y;
++			gtk_adjustment_clamp_page(adjustment, top, top + gtk_widget_get_allocated_height(GTK_WIDGET(child)));
++		}
++		break;
++	}
++	if(gtk_widget_get_visible(entry) && gtk_widget_get_child_visible(entry) && !gtk_widget_has_focus(entry)) {
++		gtk_entry_grab_focus_without_selecting(GTK_ENTRY(entry));
++	}
++}
++
++static void move_up(void) {
++	move_selection(-1);
+ }
+ 
+ static void move_down(void) {
+-	user_moved = true;
+-	if(outer_orientation == GTK_ORIENTATION_VERTICAL) {
+-		if(gtk_widget_has_focus(entry) || gtk_widget_has_focus(scroll)) {
+-			select_first();
+-			return;
+-		}
+-	}
+-	gtk_widget_child_focus(window, GTK_DIR_DOWN);
++	move_selection(1);
+ }
+ 
+ static void move_left(void) {

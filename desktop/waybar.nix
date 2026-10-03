@@ -33,7 +33,11 @@ in
     # Waybar otherwise forces widget opacity to zero immediately on SIGUSR1,
     # bypassing GTK transitions. Its existing .hidden class drives the fade.
     package = pkgs.waybar.overrideAttrs (old: {
-      patches = (old.patches or [ ]) ++ [ ./waybar-clock-anchor.patch ];
+      patches = (old.patches or [ ]) ++ [
+        ./waybar-clock-anchor.patch
+        # Reloads must disconnect monitor callbacks before binding them again.
+        ./waybar-reload.patch
+      ];
       postPatch = (old.postPatch or "") + ''
         substituteInPlace src/bar.cpp \
           --replace-fail 'window.set_opacity(0);' '// Opacity is animated by the shared GTK style.'
