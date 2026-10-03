@@ -12,7 +12,8 @@ rec {
     surface = "393029";
     selection = "493a2c";
     sidebarSelection = "302923";
-    folder = "f6e6cd";
+    # Keep folders yellow independently of the muted selection backgrounds.
+    folder = "f6d76f";
   };
 
   radius = 28;
