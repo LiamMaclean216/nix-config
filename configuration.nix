@@ -31,7 +31,17 @@ in
     # BlueZ 5.80 leaves Disconnect/RemoveDevice pending when the controller
     # returns MGMT_STATUS_DISCONNECTED (0x0e), as seen after Corne BT_CLR.
     # The pinned unstable BlueZ (5.87) handles that as already disconnected.
-    package = pkgs-unstable.bluez;
+    package = pkgs-unstable.bluez.overrideAttrs (old: {
+      # BlueZ 5.87 discards cached A2DP endpoints on reconnect, which can leave
+      # headphones connected without audio and report br-connection-busy.
+      # Backport the upstream fix until the pinned release includes it.
+      patches = (old.patches or []) ++ [
+        (pkgs.fetchurl {
+          url = "https://github.com/bluez/bluez/commit/b7d71e5067856b0daf2f1f73b3fc95483236610e.patch";
+          hash = "sha256-xwiE0vJLVuXJL9o0PMkGPzPp/ugQWEStkpB0mfYjeYA=";
+        })
+      ];
+    });
     powerOnBoot = true;
     settings = {
       General = {
@@ -60,10 +70,12 @@ in
   # Switch to default LTS kernel for better stability
   boot.kernelPackages = pkgs.linuxPackages;
 
-  # Fix for MediaTek MT7925e WiFi card hanging/disappearing
-  # Disables Active State Power Management (ASPM) to prevent hardware lockups
+  # The TP-Link Archer T4U v3 uses RTL8822BU, not MediaTek.
+  # Keep it in USB 2 mode: USB 3 mode switching has coincided with register
+  # timeouts (-110), USB protocol errors (-71), and startup disconnects.
+  # This trades peak throughput for stability; NetworkManager disables Wi-Fi PS.
   boot.extraModprobeConfig = ''
-    options mt7925e disable_aspm=1 power_save=0
+    options rtw88_usb switch_usb_mode=N
   '';
   
   # Enable firmware updates for WiFi and other hardware
@@ -177,16 +189,14 @@ in
         "51-bluez-config" = {
           "monitor.bluez.properties" = {
             "bluez5.enable-sbc-xq" = true;
-            "bluez5.enable-msbc" = true;
             "bluez5.enable-hw-volume" = true;
             "bluez5.dummy-avrcp-player" = true;
+            # Playback only: do not expose headset/microphone profiles that
+            # reduce AirPods playback quality when an application records.
+            "bluez5.hfphsp-backend" = "none";
             "bluez5.roles" = [
               "a2dp_sink"
               "a2dp_source"
-              "hfp_hf"
-              "hfp_ag"
-              "hsp_hs"
-              "hsp_ag"
             ];
           };
           "monitor.bluez.rules" = [
@@ -200,10 +210,6 @@ in
                 "update-props" = {
                   "bluez5.auto-connect" = [
                     "a2dp_sink"
-                    "hfp_hf"
-                    "hfp_ag"
-                    "hsp_hs"
-                    "hsp_ag"
                   ];
                 };
               };
@@ -212,9 +218,8 @@ in
         };
         "11-bluetooth-policy" = {
           "wireplumber.settings" = {
-            # Use HFP when an app opens the AirPods mic, then return to A2DP.
-            # A2DP provides high-quality playback but has no microphone channel.
-            "bluetooth.autoswitch-to-headset-profile" = true;
+            # Recording uses a separate microphone; keep AirPods on A2DP.
+            "bluetooth.autoswitch-to-headset-profile" = false;
             "device.restore-profile" = false;
           };
         };
@@ -233,9 +238,6 @@ in
                     "a2dp-sink"
                     "a2dp-sink-sbc_xq"
                     "a2dp-sink-sbc"
-                    "headset-head-unit-msbc"
-                    "headset-head-unit"
-                    "headset-head-unit-cvsd"
                   ];
                 };
               };

@@ -14,6 +14,8 @@ GTK supplies the rounded alpha mask. Layout is in `../wofi/style.css` and
 `../voice-input/overlay.py`.
 
 `launcher.nix` packages Wofi with native focus dismissal and corrected CSS sizing.
+Dismissal watches the window's active state so arrow-key navigation between
+widgets does not close the launcher.
 `launch.sh` prevents duplicate openings and selects an opaque fallback if HyprGlass
 is unavailable. The speech panel also uses an opaque fallback when its daemon
 starts without the plugin and rechecks whenever the bubble opens. Neither panel captures audio or desktop content just

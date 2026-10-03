@@ -48,19 +48,13 @@
         treesitter.enable = true;
       };
 
-      # Tailwind CSS
-      tailwind = {
-        enable = true;
-        lsp.enable = true;
-      };
-
       # TypeScript/JavaScript (includes React/Next.js support)
-      ts = {
+      typescript = {
         enable = true;
         treesitter.enable = true;
         lsp = {
           enable = true;
-          servers = ["ts_ls"]; # Supports JSX/TSX and React
+          servers = ["typescript-language-server"]; # Supports JSX/TSX and React
         };
         # format = {
         #   enable = true;
@@ -105,6 +99,7 @@
 
     # Enable LSP globally
     lsp.enable = true;
+    lsp.presets.tailwindcss-language-server.enable = true;
 
     # Enable treesitter globally
     treesitter = {

@@ -133,6 +133,47 @@ test("Docker actions cycle and target only the selected worktree", function()
 	Docker.supported, Docker.run = supported, run
 end)
 
+test("restart follows a selected chat row and the focused chat pane's own worktree", function()
+	setup({ { path = "/repo" }, { path = "/branch" } })
+	add("main-chat", "/repo", 200); add("branch-chat", "/branch/subdir", 100)
+	local supported, run, resync = Docker.supported, Docker.run, mode.resync
+	Docker.supported = function() return true end
+	state.docker = { checked = os.time(), worktrees = {} }
+	local actions = {}
+	Docker.run = function(path, action) table.insert(actions, { path, action }) end
+	internals.sort_threads(); internals.render_sidebar()
+	internals.select_sidebar_row(state.cursor_rows["branch-chat"])
+	press("r")
+	assert(vim.deep_equal(actions[1], { "/branch", "restart" }))
+	internals.select_sidebar_row(state.group_rows["/repo"])
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor", row = 0, col = 42, width = 30, height = 10, style = "minimal",
+	})
+	local session = { buf = buf, cwd = "/branch/subdir", initial_load_complete = true }
+	local timeout = state.opts.preview_loading_timeout
+	state.opts.preview_loading_timeout = 1000
+	internals.configure_terminal_buffer(session)
+	state.opts.preview_loading_timeout = timeout
+	press("r")
+	assert(vim.deep_equal(actions[2], { "/branch", "restart" }), "use the chat's cwd, not the sidebar header")
+	assert(vim.fn.maparg("r", "t") == "", "typing r in a chat must remain ordinary input")
+	state.project.removing_worktree = "/branch"
+	press("r"); assert(#actions == 2, "do not restart a worktree being removed")
+	state.project.removing_worktree = nil
+	session.cwd = "/unknown"
+	press("r"); assert(#actions == 2, "do not fall back to an unrelated worktree")
+	local synced = false
+	Docker.supported = function() return false end
+	mode.resync = function() synced = true end
+	press("r"); assert(synced and #actions == 2)
+	vim.api.nvim_win_close(win, true)
+	vim.api.nvim_buf_delete(buf, { force = true })
+	vim.api.nvim_set_current_win(state.sidebar_win)
+	Docker.supported, Docker.run, mode.resync = supported, run, resync
+end)
+
 test("runtime Docker state distinguishes running, partial, down, and errors, and refreshes ports", function()
 	local system, supported = vim.system, Docker.supported
 	Docker.supported = function() return true end
@@ -189,37 +230,36 @@ test("Docker launcher is asynchronous, preserves data, and allows retry after fa
 	vim.system, vim.fn.filereadable = system, readable
 end)
 
-test("Docker restart runs down then up, preserves data, and reports either phase failing", function()
-	local system, readable = vim.system, vim.fn.filereadable
-	vim.fn.filereadable = function() return 1 end
-	for _, failure in ipairs({ "none", "down", "up" }) do
-		local calls, replies, cache, reported = {}, {}, {}, nil
+for _, initialized in ipairs({ true, false }) do
+	test("Docker restart delegates to the launcher and permits retry (saved state: " .. tostring(initialized) .. ")", function()
+		local system, readable = vim.system, vim.fn.filereadable
+		vim.fn.filereadable = function(path)
+			assert(path == "/branch/scripts/dev.py" or path == "/branch/.env.worktree")
+			return (path == "/branch/scripts/dev.py" or initialized) and 1 or 0
+		end
+		local calls, reply, cache, reported = 0, nil, {}, nil
 		vim.system = function(argv, opts, callback)
+			assert(vim.deep_equal(argv, { "python3", "scripts/dev.py", "restart" }))
 			assert(opts.cwd == "/branch")
-			assert(#argv == 3 and argv[1] == "python3" and argv[2] == "scripts/dev.py")
-			table.insert(calls, argv[3]); table.insert(replies, callback)
+			calls, reply = calls + 1, callback
 		end
 		local function restart()
 			Docker.run("/branch", "restart", cache, function() end, function(err) reported = err end)
 		end
 		restart(); restart()
-		assert(#calls == 1 and calls[1] == "down")
-		assert(Docker.label(cache, "/branch") == "Docker restarting…")
-		replies[1]({ code = failure == "down" and 1 or 0, stderr = "down failed" })
-		if failure == "down" then
-			assert(vim.wait(1000, function() return reported ~= nil end))
-			assert(#calls == 1, "do not start after shutdown failed")
-		else
-			assert(vim.wait(1000, function() return #calls == 2 end))
-			assert(calls[2] == "up")
-			replies[2]({ code = failure == "up" and 1 or 0, stderr = "up failed" })
-			assert(vim.wait(1000, function() return not cache.actions["/branch"] end))
-			assert((reported ~= nil) == (failure == "up"))
-		end
+		assert(calls == 1 and Docker.label(cache, "/branch") == "Docker restarting…")
+		reply({ code = 1, stderr = "port is already allocated" })
+		assert(vim.wait(1000, function() return reported ~= nil end))
+		assert(reported:find("port is already allocated", 1, true))
 		assert(not cache.actions["/branch"] and not cache.checked)
-	end
-	vim.system, vim.fn.filereadable = system, readable
-end)
+		reported = nil
+		restart(); assert(calls == 2)
+		reply({ code = 0 })
+		assert(vim.wait(1000, function() return not cache.actions["/branch"] end))
+		assert(not reported and not cache.checked)
+		vim.system, vim.fn.filereadable = system, readable
+	end)
+end
 
 test("auto-sync discovers added/removed worktrees and branch changes while preserving selection", function()
 	local directory = vim.fn.tempname()

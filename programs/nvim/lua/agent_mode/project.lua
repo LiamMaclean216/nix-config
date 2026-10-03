@@ -183,6 +183,47 @@ function M.refresh_worktrees(project, callback)
 	if not ok then done({ code = 1, stderr = tostring(err) }) end
 end
 
+function M.recent_branches(project, limit)
+	if not project or not project.common_dir then return {} end
+	local prefix = { "git", "--git-dir", project.common_dir }
+	local function git(args)
+		return run(vim.list_extend(vim.deepcopy(prefix), args))
+	end
+	local branches, available = {}, {}
+	local refs, err = git({ "for-each-ref", "--sort=-committerdate", "--format=%(refname)", "refs/heads/" })
+	if not refs then return nil, err end
+	for ref in refs:gmatch("[^\n]+") do
+		local branch = ref:sub(#"refs/heads/" + 1)
+		table.insert(branches, branch)
+		available[branch] = true
+	end
+	-- Checked-out branches already have an entry in the worktree picker.
+	for _, worktree in ipairs(project.worktrees or {}) do
+		if worktree.branch then available[worktree.branch] = nil end
+	end
+	local history, history_err = git({ "reflog", "show", "--all", "--format=%gD%x09%gs" })
+	if not history then return nil, history_err end
+	local recent = {}
+	local function add(branch)
+		if available[branch] and #recent < (limit or 10) then
+			table.insert(recent, branch)
+			available[branch] = nil
+		end
+	end
+	for line in history:gmatch("[^\n]+") do
+		local ref, message = line:match("^(.-)@{.-}\t(.*)$")
+		if ref then
+			local from, to = message:match("^checkout: moving from (.+) to (.+)$")
+			if to then add(to); add(from) end
+			local branch = ref:match("^refs/heads/(.+)$")
+			if branch then add(branch) end
+		end
+	end
+	-- Reflogs can be disabled or expired; use commit recency for the remainder.
+	for _, branch in ipairs(branches) do add(branch) end
+	return recent
+end
+
 local function is_within(path, root)
 	if path == root then
 		return true
@@ -278,7 +319,7 @@ function M.remove_worktree(project, worktree, callback, before_remove)
 			if before_remove then before_remove(finish) else finish() end
 		end
 		if branch then remove(); return end
-		-- Agent Mode creates detached worktrees. Keep their commits reachable too.
+		-- Preserve commits from older or externally created detached worktrees too.
 		branch = "worktree/" .. sanitize(basename(current.path)) .. "-" .. current.head:sub(1, 12)
 		command({ "show-ref", "--verify", "--hash", "refs/heads/" .. branch }, function(ref_err, head)
 			if not ref_err then
@@ -344,7 +385,7 @@ function M.worktree_name_error(name)
 	end
 end
 
-function M.create_worktree(project, base_path, callback, name)
+function M.create_worktree(project, base_path, callback, name, branch)
 	callback = type(callback) == "function" and callback or function() end
 	if name ~= nil then
 		local err = M.worktree_name_error(name)
@@ -385,12 +426,16 @@ function M.create_worktree(project, base_path, callback, name)
 		local pid = vim.fn.getpid()
 		repeat
 			worktree_counter = worktree_counter + 1
-			path = vim.fs.joinpath(parent, string.format("%s-%s-%d", timestamp, pid, worktree_counter))
+			path = vim.fs.joinpath(parent, (branch and (sanitize(branch) .. "-") or "")
+				.. string.format("%s-%s-%d", timestamp, pid, worktree_counter))
 		until not uv.fs_lstat(path)
 	end
 
+	local command = branch
+		and { "git", "--git-dir", project.common_dir, "worktree", "add", "--", path, branch }
+		or { "git", "-C", base_path, "worktree", "add", "-b", basename(path), "--", path, "HEAD" }
 	return vim.system(
-		{ "git", "-C", base_path, "worktree", "add", "--detach", path, "HEAD" },
+		command,
 		{ text = true },
 		function(result)
 			vim.schedule(function()

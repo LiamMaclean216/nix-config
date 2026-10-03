@@ -10,13 +10,12 @@ let
   '';
   # Keep changes local to this launcher; other users of the system Wofi are unaffected.
   wofi = pkgs.wofi.overrideAttrs (old: {
+    patches = (old.patches or []) ++ [ ./dismiss-on-deactivate.patch ];
     postPatch = (old.postPatch or "") + ''
       substituteInPlace src/wofi.c \
         --replace-fail 'zwlr_layer_surface_v1_set_keyboard_interactivity(surface, true);' \
           'zwlr_layer_surface_v1_set_keyboard_interactivity(surface, 2);
            zwlr_layer_surface_v1_set_exclusive_zone(surface, -1);' \
-        --replace-fail 'gtk_widget_set_state_flags(widget, GTK_STATE_FLAG_NORMAL, TRUE);' \
-          'gtk_widget_set_state_flags(widget, GTK_STATE_FLAG_NORMAL, TRUE); gtk_main_quit();' \
         --replace-fail 'gtk_widget_set_size_request(scroll, width, height - alloc.height);' \
           'GtkBorder padding, border;
            GtkStyleContext *style = gtk_widget_get_style_context(outer_box);

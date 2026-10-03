@@ -5,6 +5,27 @@ function M.supported(project)
 	return root ~= nil and project ~= nil and project.common_dir == root .. "/.git"
 end
 
+function M.lazydocker_env(path)
+	local state_file = path .. "/.env.worktree"
+	if vim.fn.filereadable(state_file) ~= 1 then return nil end
+	local Project = require("config.agent_mode.project")
+	local project = Project.discover(path)
+	if not M.supported(project) then return nil end
+	-- Match dev.py's saved Compose project, image and ports without sourcing a shell file.
+	local env = {}
+	for _, line in ipairs(vim.fn.readfile(state_file)) do
+		local key, value = line:match("^([%w_]+)=(.*)$")
+		if key then env[key] = value end
+	end
+	local env_file = path .. "/.env"
+	if vim.fn.filereadable(env_file) ~= 1 then
+		env_file = vim.fs.dirname(project.common_dir) .. "/.env"
+	end
+	env.DEV_ENV_FILE = env_file
+	env.COMPOSE_ENV_FILES = env_file
+	return env
+end
+
 -- Query runtime state without invoking dev.py ps (which also resolves config/env).
 function M.refresh(project, cache, changed)
 	if not M.supported(project) or cache.pending or (cache.checked and os.time() - cache.checked < 5) then
@@ -82,20 +103,9 @@ function M.run(path, action, cache, changed, report)
 			changed()
 		end)
 	end
-	local function execute(command, complete)
-		local ok, err = pcall(vim.system, { "python3", "scripts/dev.py", command }, { cwd = path, text = true }, complete)
-		if not ok then complete({ code = 1, stderr = tostring(err) }) end
-	end
-	if action == "restart" then
-		-- Reuse the worktree launcher and its saved ports; down preserves volumes.
-		execute("down", function(result)
-			vim.schedule(function()
-				if result.code ~= 0 then done(result) else execute("up", done) end
-			end)
-		end)
-	else
-		execute(action, done)
-	end
+	-- The launcher owns restart port preservation and fresh-worktree setup.
+	local ok, err = pcall(vim.system, { "python3", "scripts/dev.py", action }, { cwd = path, text = true }, done)
+	if not ok then done({ code = 1, stderr = tostring(err) }) end
 end
 
 function M.destroy(path, cache, changed, callback)

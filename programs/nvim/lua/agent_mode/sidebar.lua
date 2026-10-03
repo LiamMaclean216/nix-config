@@ -60,6 +60,70 @@ function M.groups(state)
 	return groups, selected
 end
 
+-- Keep the picker above Agent Mode's overlay, independent of vim.ui.select
+-- providers (the default numbered prompt cannot navigate with arrow keys).
+function M.select_worktree(items, options, callback)
+	if #items == 0 then callback(nil); return end
+	local origin = vim.api.nvim_get_current_win()
+	vim.cmd("stopinsert")
+	local buf = vim.api.nvim_create_buf(false, true)
+	local lines, width = {}, 48
+	for _, item in ipairs(items) do
+		local line = options.format_item(item):gsub("[\r\n]", " ")
+		table.insert(lines, line)
+		width = math.max(width, vim.fn.strdisplaywidth(line))
+	end
+	width = math.max(1, math.min(width, vim.o.columns - 4))
+	local height = math.max(1, math.min(#lines, 16, vim.o.lines - 4))
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].buftype, vim.bo[buf].bufhidden, vim.bo[buf].modifiable = "nofile", "wipe", false
+	vim.bo[buf].filetype = "agentmodeworktrees"
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor", row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+		col = math.max(0, math.floor((vim.o.columns - width) / 2)), width = width, height = height,
+		style = "minimal", border = "rounded", title = " " .. options.prompt .. " ", title_pos = "center",
+		footer = " ↑/↓ Tab: move  Enter: select  Esc: cancel ", footer_pos = "center", zindex = 100,
+	})
+	vim.wo[win].wrap, vim.wo[win].cursorline = false, true
+	vim.wo[win].scrolloff, vim.wo[win].sidescrolloff = 0, 0
+	vim.wo[win].winhighlight = "NormalFloat:Normal,FloatBorder:DiagnosticInfo,CursorLine:PmenuSel"
+	vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(options.selected or 1, #items)), 0 })
+	local finished = false
+	local group = vim.api.nvim_create_augroup("AgentModeWorktreePicker" .. buf, { clear = true })
+	local function finish(index)
+		if finished then return end
+		finished = true
+		vim.api.nvim_del_augroup_by_id(group)
+		local focused = vim.api.nvim_get_current_win() == win
+		if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+		if focused and vim.api.nvim_win_is_valid(origin) then vim.api.nvim_set_current_win(origin) end
+		callback(index and items[index] or nil, index)
+	end
+	local keys = { buffer = buf, silent = true, nowait = true }
+	local function move(delta)
+		local row = vim.api.nvim_win_get_cursor(win)[1]
+		vim.api.nvim_win_set_cursor(win, { (row - 1 + delta) % #items + 1, 0 })
+	end
+	for _, key in ipairs({ "j", "<Down>", "<Tab>", "<C-n>" }) do
+		vim.keymap.set("n", key, function() move(1) end, keys)
+	end
+	for _, key in ipairs({ "k", "<Up>", "<S-Tab>", "<C-p>" }) do
+		vim.keymap.set("n", key, function() move(-1) end, keys)
+	end
+	vim.keymap.set("n", "<CR>", function() finish(vim.api.nvim_win_get_cursor(win)[1]) end, keys)
+	for _, key in ipairs({ "<Esc>", "<C-c>", "q" }) do
+		vim.keymap.set("n", key, function() finish(nil) end, keys)
+	end
+	vim.api.nvim_create_autocmd("WinClosed", {
+		group = group, pattern = tostring(win), once = true,
+		callback = function() vim.schedule(function() finish(nil) end) end,
+	})
+	vim.api.nvim_create_autocmd("BufLeave", {
+		group = group, buffer = buf, once = true,
+		callback = function() vim.schedule(function() finish(nil) end) end,
+	})
+end
+
 function M.confirm_remove(worktree, callback)
 	local buf = vim.api.nvim_create_buf(false, true)
 	local width = math.max(1, math.min(68, vim.o.columns - 4))

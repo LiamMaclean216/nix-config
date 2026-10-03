@@ -7,6 +7,7 @@ for _, name in ipairs({ "backend", "history", "identity", "project", "sidebar", 
 	end
 end
 local Project = require("config.agent_mode.project")
+local Sidebar = require("config.agent_mode.sidebar")
 local mode = dofile(root .. "init.lua")
 local internals, visited = {}, {}
 local function inspect(fn)
@@ -25,7 +26,7 @@ end
 local state = assert(internals.state)
 local directory = vim.fn.tempname()
 vim.fn.mkdir(directory, "p")
-local home, input, select, notify = vim.env.HOME, vim.ui.input, vim.ui.select, vim.notify
+local home, input, select, notify = vim.env.HOME, vim.ui.input, Sidebar.select_worktree, vim.notify
 local function git(...)
 	local args = { "git", "-C", directory }
 	vim.list_extend(args, { ... })
@@ -80,7 +81,7 @@ local ok, err = pcall(function()
 	end)
 
 	local created
-	test("named creation uses the selected base HEAD and rejects duplicate paths", function()
+	test("named creation checks out a new branch at the selected base HEAD and rejects duplicate paths", function()
 		local complete, failure
 		Project.create_worktree(state.project, directory, function(error, path)
 			complete, failure, created = true, error, path
@@ -88,6 +89,7 @@ local ok, err = pcall(function()
 		assert(vim.wait(5000, function() return complete end))
 		assert(not failure, failure)
 		assert(vim.fs.basename(created) == "feature-test")
+		assert(git("-C", created, "symbolic-ref", "--short", "HEAD") == "feature-test")
 		assert(git("-C", created, "rev-parse", "HEAD") == git("rev-parse", "HEAD"))
 		complete = false
 		Project.create_worktree(state.project, directory, function(error)
@@ -99,7 +101,7 @@ local ok, err = pcall(function()
 
 	test("Ctrl-W refreshes existing worktrees and selects the chat directory", function()
 		assert(#state.project.worktrees == 1, "start with a stale worktree list")
-		vim.ui.select = function(items, options, done)
+		Sidebar.select_worktree = function(items, options, done)
 			assert(#items == 2 and options.format_item(items[2]):find(created, 1, true))
 			done(items[2], 2)
 		end
@@ -109,8 +111,29 @@ local ok, err = pcall(function()
 		assert(vim.api.nvim_buf_get_lines(state.composer.buf, 0, -1, false)[1] == "keep this draft")
 	end)
 
+	test("the real picker browses worktrees with arrows and Enter without editing the draft", function()
+		Sidebar.select_worktree = select
+		local origin = vim.api.nvim_get_current_win()
+		mode.select_worktree()
+		local picker = vim.api.nvim_get_current_win()
+		assert(picker ~= origin and vim.bo.filetype == "agentmodeworktrees")
+		assert(vim.api.nvim_win_get_cursor(picker)[1] == 2, "start on the current destination")
+		local keys = vim.api.nvim_replace_termcodes("<Up><Down><Up><CR>", true, false, true)
+		vim.api.nvim_feedkeys(keys, "xt", false)
+		assert(not vim.api.nvim_win_is_valid(picker))
+		assert(vim.api.nvim_get_current_win() == origin)
+		assert(internals.current_target().path == directory)
+		assert(vim.api.nvim_buf_get_lines(state.composer.buf, 0, -1, false)[1] == "keep this draft")
+		mode.select_worktree()
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Down><Esc>", true, false, true), "xt", false)
+		assert(internals.current_target().path == directory, "cancel must preserve the destination")
+		mode.select_worktree()
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Tab><CR>", true, false, true), "xt", false)
+		assert(internals.current_target().path == created)
+	end)
+
 	test("cancelled and stale pickers do not change the destination", function()
-		vim.ui.select = function(_, _, done) callback = done end
+		Sidebar.select_worktree = function(_, _, done) callback = done end
 		mode.select_worktree()
 		callback(nil)
 		assert(internals.current_target().path == created)
@@ -149,6 +172,9 @@ local ok, err = pcall(function()
 		assert(vim.wait(5000, function() return launched ~= nil end))
 		debug.setupvalue(submit, launch_index, real_launch)
 		assert(vim.fs.basename(launched) == "from-selected")
+		assert(git("-C", launched, "symbolic-ref", "--short", "HEAD") == "from-selected")
+		assert(internals.current_target().path == launched)
+		assert(internals.current_target().branch == "from-selected")
 		assert(git("-C", launched, "rev-parse", "HEAD") == git("-C", created, "rev-parse", "HEAD"))
 		assert(git("-C", launched, "rev-parse", "HEAD") ~= git("rev-parse", "HEAD"))
 		assert(not state.new_worktree and not state.new_worktree_name)
@@ -196,6 +222,7 @@ local ok, err = pcall(function()
 		assert(state.move_pending[thread.id])
 		assert(vim.wait(5000, function() return moved_path ~= nil end))
 		assert(git("-C", moved_path, "rev-parse", "HEAD") == git("-C", created, "rev-parse", "HEAD"))
+		assert(git("-C", moved_path, "symbolic-ref", "--short", "HEAD") == "moved-chat")
 		assert(state.threads[thread.id].cwd == created, "do not announce the move before Codex confirms it")
 		move_done(nil, vim.tbl_extend("force", thread, { cwd = moved_path }))
 		mode.open_selected = open_selected
@@ -234,8 +261,128 @@ local ok, err = pcall(function()
 		assert(warnings[#warnings]:find("writer conflict", 1, true))
 		assert(warnings[#warnings]:find("failed-move", 1, true))
 	end)
+
+	local timestamp = os.time() + 100
+	local function recent_git(...)
+		timestamp = timestamp + 1
+		local args = { "git", "-C", directory }
+		vim.list_extend(args, { ... })
+		local result = vim.system(args, { text = true, env = { GIT_COMMITTER_DATE = timestamp .. " +0000" } }):wait()
+		assert(result.code == 0, result.stderr)
+	end
+	test("recent branches follow checkout activity, exclude deleted/checked-out branches and cap at ten", function()
+		for index = 1, 12 do
+			recent_git("checkout", "-b", "feature/" .. index)
+			if index == 11 then
+				recent_git("-c", "user.name=Test", "-c", "user.email=test@example.com",
+					"commit", "--allow-empty", "-m", "branch-specific commit")
+			end
+		end
+		recent_git("checkout", "feature/2") -- Old commit, most recently used branch.
+		recent_git("checkout", "main")
+		recent_git("branch", "-D", "feature/12")
+		local branches = assert(Project.recent_branches(Project.discover(directory), 10))
+		assert(#branches == 10)
+		assert(branches[1] == "feature/2", vim.inspect(branches))
+		assert(branches[2] == "feature/11", vim.inspect(branches))
+		assert(not vim.tbl_contains(branches, "main") and not vim.tbl_contains(branches, "feature/12"))
+		assert(#Project.recent_branches({}) == 0)
+	end)
+
+	local branch_choice, branch_index, picker_done
+	Sidebar.select_worktree = function(items, options, done)
+		local trees = #Project.discover(directory).worktrees
+		assert(#items == trees + 10)
+		for index = 1, trees do assert(items[index].path and not items[index].new_branch) end
+		assert(items[trees + 1].new_branch == "feature/2")
+		branch_index, branch_choice, picker_done = trees + 2, items[trees + 2], done
+		assert(options.format_item(branch_choice):find("feature/11", 1, true))
+		assert(options.format_item(branch_choice):find("create worktree", 1, true))
+	end
+	test("cancelled and stale recent-branch selections do not create a worktree", function()
+		local before = #Project.discover(directory).worktrees
+		mode.select_worktree()
+		picker_done(nil)
+		mode.select_worktree()
+		local project = state.project
+		state.project = { common_dir = "/other/.git", launch_cwd = "/other", worktrees = {} }
+		picker_done(branch_choice, branch_index)
+		state.project = project
+		assert(#Project.discover(directory).worktrees == before)
+	end)
+
+	test("selecting a recent branch immediately creates and displays an empty worktree in Recents", function()
+		state.sidebar_win = vim.api.nvim_open_win(state.sidebar_buf, true, {
+			relative = "editor", row = 0, col = 0, width = 40, height = 20, style = "minimal",
+		})
+		local threads_before = vim.tbl_count(state.threads)
+		local before = #Project.discover(directory).worktrees
+		mode.select_worktree()
+		picker_done(branch_choice, branch_index)
+		assert(state.project.creating_worktree)
+		assert(vim.wait(5000, function() return not state.project.creating_worktree end))
+		assert(#state.project.worktrees == before + 1, warnings[#warnings])
+		local tree = internals.current_target()
+		assert(tree.branch == "feature/11" and tree.label == "feature/11")
+		assert(git("-C", tree.path, "symbolic-ref", "--short", "HEAD") == "feature/11")
+		assert(git("-C", tree.path, "rev-parse", "HEAD") == git("rev-parse", "refs/heads/feature/11"))
+		assert(git("-C", tree.path, "rev-parse", "HEAD") ~= git("rev-parse", "HEAD"))
+		assert(state.sidebar_worktree == tree.path and state.sidebar_level == "worktrees")
+		assert(state.group_rows[tree.path], "empty worktree must appear immediately in Recents")
+		local lines = table.concat(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false), "\n")
+		assert(lines:find("feature/11", 1, true))
+		assert(vim.tbl_count(state.threads) == threads_before, "no message or conversation should be created")
+		assert(vim.api.nvim_buf_get_lines(state.composer.buf, 0, -1, false)[1] == "keep this draft")
+		assert(not state.new_worktree and not state.new_worktree_name)
+		assert(not vim.tbl_contains(Project.recent_branches(state.project), "feature/11"))
+	end)
+
+	test("a branch deleted after opening the picker leaves the destination and draft intact", function()
+		local previous = internals.current_target().path
+		Sidebar.select_worktree = function(items, _, done)
+			for index, item in ipairs(items) do
+				if item.new_branch == "feature/2" then
+					git("branch", "-D", "feature/2")
+					done(item, index)
+					return
+				end
+			end
+			error("missing recent branch")
+		end
+		mode.select_worktree()
+		assert(vim.wait(5000, function() return not state.project.creating_worktree end))
+		assert(internals.current_target().path == previous)
+		assert(warnings[#warnings]:find("git worktree add failed", 1, true))
+		assert(vim.api.nvim_buf_get_lines(state.composer.buf, 0, -1, false)[1] == "keep this draft")
+	end)
+
+	test("unnamed creation checks out an automatically named branch", function()
+		local complete, failure, path
+		Project.create_worktree(state.project, directory, function(error, created_path)
+			complete, failure, path = true, error, created_path
+		end)
+		assert(vim.wait(5000, function() return complete end))
+		assert(not failure, failure)
+		assert(git("-C", path, "symbolic-ref", "--short", "HEAD") == vim.fs.basename(path))
+		assert(git("-C", path, "rev-parse", "HEAD") == git("rev-parse", "HEAD"))
+	end)
+
+	test("an existing branch is preserved when a new worktree uses its name", function()
+		git("branch", "existing-branch", "feature-test")
+		local original = git("rev-parse", "existing-branch")
+		local before = #Project.discover(directory).worktrees
+		local complete, failure, path
+		Project.create_worktree(state.project, directory, function(error, created_path)
+			complete, failure, path = true, error, created_path
+		end, "existing-branch")
+		assert(vim.wait(5000, function() return complete end))
+		assert(failure and failure:find("already exists", 1, true), failure)
+		assert(not path)
+		assert(#Project.discover(directory).worktrees == before)
+		assert(git("rev-parse", "existing-branch") == original)
+	end)
 end)
-vim.env.HOME, vim.ui.input, vim.ui.select, vim.notify = home, input, select, notify
+vim.env.HOME, vim.ui.input, Sidebar.select_worktree, vim.notify = home, input, select, notify
 vim.fn.delete(directory, "rf")
 assert(ok, err)
 print(string.format("Passed %d worktree regression tests", count))

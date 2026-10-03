@@ -3,6 +3,8 @@
   inputs = {
     nixpkgs.url = "nixpkgs/nixos-25.05";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
+    # Update GitHub CLI independently of the system and desktop packages.
+    nixpkgs-gh.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager.url = "github:nix-community/home-manager/release-25.05";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
     codex-nix.url = "github:sadjow/codex-nix";
@@ -31,6 +33,7 @@
       lib = nixpkgs.lib;
       system = "x86_64-linux";
       desktopOverlay = final: prev: {
+        gh = inputs.nixpkgs-gh.legacyPackages.${system}.gh;
         # Firefox 146 crashes against newer Wayland color-management globals.
         firefox = inputs.hyprland.inputs.nixpkgs.legacyPackages.${system}.firefox;
         # The lock-screen controls use the current Hyprlock widget options.
@@ -54,7 +57,11 @@
       };
       pkgs = import nixpkgs { inherit system; overlays = [ desktopOverlay ]; };
     in {
-      packages.${system} = { inherit (pkgs) hyprland hyprglass; };
+      packages.${system} = {
+        inherit (pkgs) gh hyprland hyprglass;
+        home-manager = home-manager.packages.${system}.home-manager;
+        codex = inputs.codex-nix.packages.${system}.default;
+      };
       nixosConfigurations = {
         nixos = lib.nixosSystem {
           inherit system;

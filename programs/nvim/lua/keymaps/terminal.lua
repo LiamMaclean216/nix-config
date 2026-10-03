@@ -9,6 +9,12 @@ local opts = { noremap = true, silent = true }
 local Terminal = require("toggleterm.terminal").Terminal
 
 local function current_git_root()
+	local agent_mode = package.loaded["config.agent_mode"]
+	local worktree = agent_mode and agent_mode.selected_worktree()
+	if worktree then
+		return worktree
+	end
+
 	local cwd_root = vim.fs.root(vim.fn.getcwd(), ".git")
 	if cwd_root then
 		return cwd_root
@@ -112,26 +118,34 @@ end
 vim.keymap.set("n", "<C-g>", open_lazygit, { desc = "Lazygit" })
 
 -- Lazydocker
-local lazydocker = Terminal:new({
-	cmd = "lazydocker",
-	direction = "float",
-	float_opts = {
-		width = function()
-			return math.floor(vim.o.columns * 0.8)
-		end,
-		height = function()
-			return math.floor(vim.o.lines * 0.8)
-		end,
-	},
-	hidden = true,
-	on_open = function(term)
-		vim.keymap.set("t", "<C-q>", function()
-			term:close()
-		end, { buffer = term.bufnr, noremap = true, silent = true })
-	end,
-})
+local lazydocker_terminals = {}
 
 vim.keymap.set("n", "<C-v>", function()
+	local root = current_git_root()
+	local lazydocker = lazydocker_terminals[root]
+	if not lazydocker then
+		lazydocker = Terminal:new({
+			cmd = "lazydocker",
+			dir = root,
+			env = require("config.agent_mode.docker").lazydocker_env(root),
+			direction = "float",
+			float_opts = {
+				width = function()
+					return math.floor(vim.o.columns * 0.8)
+				end,
+				height = function()
+					return math.floor(vim.o.lines * 0.8)
+				end,
+			},
+			hidden = true,
+			on_open = function(term)
+				vim.keymap.set("t", "<C-q>", function()
+					term:close()
+				end, { buffer = term.bufnr, noremap = true, silent = true })
+			end,
+		})
+		lazydocker_terminals[root] = lazydocker
+	end
 	lazydocker:toggle()
 end, { desc = "Lazydocker" })
 

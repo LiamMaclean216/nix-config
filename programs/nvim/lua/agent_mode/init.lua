@@ -476,6 +476,14 @@ local function selected_thread()
 	return state.selected_id and displayed_threads()[state.selected_id] or nil
 end
 
+function M.selected_worktree()
+	if not valid_win(state.sidebar_win) or vim.api.nvim_get_current_win() ~= state.sidebar_win then
+		return nil
+	end
+	local _, group = Sidebar.groups(state)
+	return group and group.worktree.path or nil
+end
+
 local function current_target()
 	local worktrees = state.project and state.project.worktrees or {}
 	if #worktrees == 0 then
@@ -696,7 +704,7 @@ render_sidebar = function()
 		"  " .. string.rep("─", math.max(1, width - 4)),
 		state.worktree_sync_error and "  Worktree sync failed; retrying…" or "",
 		truncate("  New chat: " .. target_summary(), width - 1),
-		"  [Ctrl-W] select existing worktree",
+		"  [Ctrl-W] worktrees / recent branches",
 		"  [Ctrl-T/W] move chat to new worktree",
 		"  [w] cycle existing worktree",
 		"",
@@ -788,6 +796,14 @@ render_sidebar = function()
 		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { group_rows[state.sidebar_worktree], 1 })
 	elseif valid_win(state.sidebar_win) and state.selected_id and cursor_rows[state.selected_id] then
 		pcall(vim.api.nvim_win_set_cursor, state.sidebar_win, { cursor_rows[state.selected_id], 1 })
+	end
+end
+
+local function restart_worktree(worktree)
+	if not Docker.supported(state.project) then
+		M.resync()
+	elseif worktree and state.project.removing_worktree ~= worktree.path then
+		Docker.run(worktree.path, "restart", state.docker, render_sidebar, notify)
 	end
 end
 
@@ -1384,6 +1400,9 @@ local function configure_terminal_buffer(session)
 	vim.bo[session.buf].buflisted = false
 	vim.bo[session.buf].swapfile = false
 	map_agent_buffer(session.buf)
+	vim.keymap.set("n", "r", function()
+		restart_worktree(Project.worktree_for(state.project, session.cwd))
+	end, { buffer = session.buf, silent = true, desc = "Restart chat worktree Docker (resync for other projects)" })
 
 	vim.keymap.set("t", "<Esc>", function()
 		local normal = vim.api.nvim_replace_termcodes("<C-\\><C-n>", true, false, true)
@@ -2731,13 +2750,46 @@ local function move_to_active(thread)
 	end
 end
 
+local function recheck_queued_dismissal(thread)
+	local backend = state.backend
+	if not state.backend_ready or not backend or not backend.read_thread
+		or tostring(thread.id):match("^pending%-%d+$")
+	then
+		return
+	end
+	local id, queued = thread.id, thread._dismiss_queued
+	local generation, revision = state.refresh_generation, backend._status_revision
+	backend:read_thread(id, function(err, result)
+		local current = state.threads[id]
+		if err or state.shutting_down or state.backend ~= backend
+			or state.refresh_generation ~= generation
+			or not current or current._dismiss_queued ~= queued
+		then
+			return
+		end
+		local latest = result and normalize(result.thread)
+		if type(latest) ~= "table" or latest.id ~= id then
+			return
+		end
+		-- A status event received during the read takes precedence over its snapshot.
+		if backend.reconcile_statuses then
+			backend:reconcile_statuses({ latest }, revision)
+		end
+		handle_backend_notification("thread/status/changed", { threadId = id, status = latest.status })
+	end, { summary_only = true })
+end
+
 local function dismiss_thread(thread, skip_preview)
 	if not thread or state.dismiss_pending[thread.id] or state.move_pending[thread.id] then
 		return
 	end
 	if thread._dismiss_queued or status_name(thread) == "working" then
-		thread._dismiss_queued = not thread._dismiss_queued or nil
+		-- A unique token prevents a cancelled queue's reply from dismissing a later run.
+		thread._dismiss_queued = not thread._dismiss_queued and {} or nil
 		render_sidebar()
+		if thread._dismiss_queued then
+			recheck_queued_dismissal(thread)
+		end
 		return
 	end
 	if tostring(thread.id):match("^pending%-%d+$") then
@@ -3038,7 +3090,7 @@ local function filter_recents()
 end
 
 local function cycle_worktree()
-	if not state.project or #state.project.worktrees == 0 or (state.composer and state.composer.busy) then
+	if not state.project or state.project.creating_worktree or #state.project.worktrees == 0 or (state.composer and state.composer.busy) then
 		return
 	end
 	state.new_target = (state.new_target % #state.project.worktrees) + 1
@@ -3054,13 +3106,13 @@ local function worktree_prompt_context()
 		notify("Worktrees require a Git repository", vim.log.levels.WARN)
 		return
 	end
-	if composer and composer.busy then
+	if project.creating_worktree or (composer and composer.busy) then
 		return
 	end
 	local win = vim.api.nvim_get_current_win()
 	local inserting = vim.api.nvim_get_mode().mode:sub(1, 1) == "i"
 	local function current()
-		return project_key(state.project) == project_key(project) and state.composer == composer
+		return not state.shutting_down and project_key(state.project) == project_key(project) and state.composer == composer
 			and not (composer and composer.busy)
 	end
 	local function restore()
@@ -3080,15 +3132,50 @@ function M.select_worktree()
 	end
 	local discovered = Project.discover(project.launch_cwd)
 	local target = current_target()
-	vim.ui.select(discovered.worktrees, {
+	local choices = vim.list_extend({}, discovered.worktrees)
+	local branches, err = Project.recent_branches(discovered, 10)
+	if err then notify("Could not load recent branches: " .. err, vim.log.levels.WARN) end
+	for _, branch in ipairs(branches or {}) do
+		table.insert(choices, { new_branch = branch })
+	end
+	local selected = 1
+	for index, worktree in ipairs(discovered.worktrees) do
+		if target and target.path == worktree.path then selected = index; break end
+	end
+	Sidebar.select_worktree(choices, {
 		prompt = "Select worktree for new chat:",
+		selected = selected,
 		format_item = function(worktree)
+			if worktree.new_branch then return "  + " .. worktree.new_branch .. " — create worktree" end
 			local selected = target and target.path == worktree.path and not state.new_worktree
 			return (selected and "* " or "  ") .. (worktree.label or vim.fs.basename(worktree.path))
 				.. " — " .. worktree.path
 		end,
 	}, function(worktree, index)
 		if current() and worktree then
+			if worktree.new_branch then
+				project.creating_worktree = true
+				Project.create_worktree(project, nil, function(create_err, path)
+					project.creating_worktree = nil
+					if create_err then
+						notify(create_err, vim.log.levels.ERROR)
+					elseif current() then
+						state.project.worktree_revision = (state.project.worktree_revision or 0) + 1
+						state.project.worktrees = Project.discover(path).worktrees
+						for position, tree in ipairs(state.project.worktrees) do
+							if tree.path == path then state.new_target = position; break end
+						end
+						state.new_worktree, state.new_worktree_name = false, nil
+						state.sidebar_worktree, state.sidebar_level = path, "worktrees"
+						render_sidebar()
+						update_composer_frame()
+					else
+						notify("Worktree created at " .. path, vim.log.levels.INFO)
+					end
+					restore()
+				end, nil, worktree.new_branch)
+				return
+			end
 			state.project.worktrees = discovered.worktrees
 			state.new_target = index
 			state.new_worktree = false
@@ -3348,14 +3435,8 @@ local function sidebar_mappings()
 		desc = "Remove worktree (keep branch), or dismiss/restore run",
 	}))
 	vim.keymap.set("n", "r", function()
-		if Docker.supported(state.project) then
-			local _, group = Sidebar.groups(state)
-			if group and state.project.removing_worktree ~= group.worktree.path then
-				Docker.run(group.worktree.path, "restart", state.docker, render_sidebar, notify)
-			end
-		else
-			M.resync()
-		end
+		local _, group = Sidebar.groups(state)
+		restart_worktree(group and group.worktree)
 	end, vim.tbl_extend("force", options, { desc = "Restart worktree Docker (resync for other projects)" }))
 	vim.keymap.set("n", "<C-r>", M.resync, vim.tbl_extend("force", options, { desc = "Resync Agent Mode recents" }))
 	vim.keymap.set("n", "a", rename_selected_worktree, vim.tbl_extend("force", options, { desc = "Rename worktree / branch" }))
@@ -3788,7 +3869,7 @@ end
 
 local function submit_composer()
 	local composer = state.composer
-	if not composer or composer.busy or not valid_buf(composer.buf) then
+	if not composer or composer.busy or (state.project and state.project.creating_worktree) or not valid_buf(composer.buf) then
 		return
 	end
 	local prompt = vim.trim(composer_text(composer))
@@ -4117,7 +4198,17 @@ open_new_chat = function()
 end
 
 function M.new_chat()
+	local worktree_path = M.selected_worktree()
 	enter_agent_mode(false)
+	if worktree_path and not state.project.creating_worktree and not (state.composer and state.composer.busy) then
+		for index, worktree in ipairs(state.project.worktrees) do
+			if worktree.path == worktree_path then
+				state.new_target = index
+				state.new_worktree, state.new_worktree_name = false, nil
+				break
+			end
+		end
+	end
 	open_new_chat()
 end
 

@@ -1661,6 +1661,77 @@ test("queued dismissal keeps the terminal alive until completion, then closes be
 	assert(ok, err)
 end)
 
+for _, kind in ipairs({ "idle", "systemError", "active", "notLoaded", "waitingOnApproval", "waitingOnUserInput", "read-error", "invalid" }) do
+	test("queuing dismissal rechecks live status: " .. kind, function()
+		local chat = thread("chat", nil, { status = { type = "active" } })
+		state.threads.chat = chat
+		local reply, archived, interrupts
+		state.backend = {
+			read_thread = function(_, id, callback, options)
+				assert(id == "chat" and options.summary_only)
+				reply = callback
+			end,
+			interrupt_thread = function(_, _, callback) interrupts = true; callback(nil) end,
+			archive_thread = function(_, id, callback) archived = id; callback(nil) end,
+		}
+		internals.dismiss_thread(chat)
+		assert(reply and chat._dismiss_queued and not interrupts)
+		local status = { type = kind }
+		if kind:match("^waiting") then status = { type = "active", activeFlags = { kind } } end
+		reply(kind == "read-error" and "failed" or nil,
+			kind == "invalid" and {} or { thread = thread("chat", nil, { status = status }) })
+		if kind == "idle" or kind == "systemError" then
+			assert(not state.threads.chat and not chat._dismiss_queued)
+			assert(vim.wait(1000, function() return archived == "chat" end))
+		else
+			assert(state.threads.chat == chat and chat._dismiss_queued and not interrupts)
+		end
+	end)
+end
+
+for _, action in ipairs({ "cancel", "requeue", "refresh", "new-event", "resync", "shutdown" }) do
+	test("queued dismissal status reply respects " .. action, function()
+		local chat = thread("chat", nil, { status = { type = "active" } })
+		state.threads.chat = chat
+		local replies, archived = {}, nil
+		local backend = Backend.new({})
+		backend.read_thread = function(_, _, callback) table.insert(replies, callback) end
+		backend.interrupt_thread = function(_, _, callback) callback(nil) end
+		backend.archive_thread = function(_, id, callback) archived = id; callback(nil) end
+		state.backend = backend
+		internals.dismiss_thread(chat)
+		if action == "cancel" or action == "requeue" then
+			internals.dismiss_thread(chat)
+			if action == "requeue" then internals.dismiss_thread(chat) end
+		elseif action == "refresh" then
+			backend.list_threads = function(_, _, callback)
+				callback(nil, { thread("chat", nil, { status = { type = "active" } }) })
+			end
+			refresh()
+			assert(state.threads.chat ~= chat)
+		elseif action == "new-event" then
+			backend._statuses.chat = { revision = 1, status = { type = "active" } }
+		elseif action == "resync" then
+			state.refresh_generation = state.refresh_generation + 1
+		elseif action == "shutdown" then
+			state.shutting_down = true
+		end
+		local idle = { thread = thread("chat", nil, { status = { type = "idle" } }) }
+		replies[1](nil, idle)
+		if action == "refresh" then
+			assert(not state.threads.chat)
+			assert(vim.wait(1000, function() return archived == "chat" end))
+		else
+			assert(state.threads.chat == chat and not archived)
+			if action == "requeue" then
+				replies[2](nil, idle)
+				assert(not state.threads.chat)
+				assert(vim.wait(1000, function() return archived == "chat" end))
+			end
+		end
+	end)
+end
+
 test("failed interruption restores the active row without closing or archiving", function()
 	local chat = thread("chat", nil, { status = { type = "idle" } })
 	state.threads.chat = chat

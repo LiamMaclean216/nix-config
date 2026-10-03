@@ -1,0 +1,33 @@
+--- a/src/wofi.c
++++ b/src/wofi.c
+@@ -1491,6 +1491,22 @@
+ 	return FALSE;
+ }
+ 
++static gboolean dismiss_if_inactive(gpointer data) {
++	if(!gtk_window_is_active(GTK_WINDOW(data))) {
++		gtk_main_quit();
++	}
++	return G_SOURCE_REMOVE;
++}
++
++static void dismiss_on_deactivate(GObject* object, GParamSpec* pspec, gpointer data) {
++	(void) pspec;
++	(void) data;
++	// Wait for internal focus transitions to settle before dismissing.
++	if(!gtk_window_is_active(GTK_WINDOW(object))) {
++		g_idle_add(dismiss_if_inactive, object);
++	}
++}
++
+ static gboolean focus(GtkWidget* widget, GdkEvent* event, gpointer data) {
+ 	(void) data;
+ 	if(event->focus_change.in) {
+@@ -2043,6 +2059,7 @@
+ 	g_signal_connect(inner_box, "selected-children-changed", G_CALLBACK(select_item), NULL);
+ 	g_signal_connect(entry, "activate", G_CALLBACK(activate_search), NULL);
+ 	g_signal_connect(window, "key-press-event", G_CALLBACK(key_press), NULL);
++	g_signal_connect(window, "notify::is-active", G_CALLBACK(dismiss_on_deactivate), NULL);
+ 	g_signal_connect(window, "focus-in-event", G_CALLBACK(focus), NULL);
+ 	g_signal_connect(window, "focus-out-event", G_CALLBACK(focus), NULL);
+ 	g_signal_connect(entry, "focus-in-event", G_CALLBACK(focus_entry), NULL);

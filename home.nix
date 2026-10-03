@@ -36,6 +36,11 @@ in {
     pkgs.hello
     pkgs.wl-clipboard
     pkgs.ruff
+    # Shared development tools for local coding agents.
+    pkgs.chromium
+    pkgs.jq
+    pkgs.fd
+    pkgs.shellcheck
     pkgs.android-tools
 
     myPython
@@ -43,6 +48,7 @@ in {
   nixpkgs.config.allowUnfree = true;
 
   home.sessionVariables = {
+    CHROMIUM_EXECUTABLE = "${pkgs.chromium}/bin/chromium";
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
     TERMINAL = "alacritty";
     HYPRLOCK_SOLAR_DEFAULT_TZ = "America/Toronto";

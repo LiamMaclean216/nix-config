@@ -59,6 +59,9 @@ in {
     hl.bind("XF86AudioLowerVolume", hl.dsp.exec_cmd("wpctl set-volume --limit 2.0 @DEFAULT_AUDIO_SINK@ 10%-"))
     hl.bind("XF86AudioMute", hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))
     hl.bind("XF86AudioMicMute", hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"))
+    -- Consume the scroll-wheel click so clients cannot use it to paste the
+    -- primary selection. Wheel scrolling uses separate axis events.
+    hl.bind("mouse:274", hl.dsp.exec_cmd("true"), { ignore_mods = true })
     hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
     hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
   '';

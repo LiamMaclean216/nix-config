@@ -47,8 +47,4 @@ in {
     '';
   };
 
-  # Add chromium for puppeteer
-  home.packages = with pkgs; [
-    chromium
-  ];
 }
