@@ -63,7 +63,7 @@ PlacesPanel::item {
 }
 PlacesPanel::item:hover { background: #@surface@; }
 PlacesPanel::item:selected {
-    background: #@sidebarSelection@;
+    background: #@selection@;
     color: #@foreground@;
     border: none;
     border-radius: @control-radius@px;

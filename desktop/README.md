@@ -18,7 +18,8 @@ Dolphin uses uniform file backgrounds, soft selection, a quieter column header
 and a minimal toolbar without dropdown chevrons. The folder tree panel above
 Places and the selection plus overlays are hidden. The status bar is disabled,
 including folder counts and selected-file details. Light yellow folder icons and the
-darker, rounded Places selection use `colors.folder` and `colors.sidebarSelection`.
+rounded Places selection use `colors.folder` and `colors.selection`.
+Places and the file list share the same selection highlight.
 The information-panel preview, file rows and icon zoom update without size transitions.
 Activation removes the Music bookmark from Places while keeping the folder.
 The details list has no side padding or inline folder-expansion gutter.

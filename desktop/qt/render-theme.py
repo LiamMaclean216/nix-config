@@ -129,7 +129,7 @@ def itemview_background(state, color):
         })
 
 
-for state, role in (("focused", "surface"), ("pressed", "selection"), ("toggled", "sidebarSelection")):
+for state, role in (("focused", "surface"), ("pressed", "selection"), ("toggled", "selection")):
     itemview_background(state, colors[role])
     itemview_background(state + "-inactive", colors[role])
 
