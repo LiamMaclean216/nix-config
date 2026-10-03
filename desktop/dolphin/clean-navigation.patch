@@ -1,0 +1,49 @@
+--- a/src/dolphinmainwindow.cpp
++++ b/src/dolphinmainwindow.cpp
+@@ -199,6 +199,17 @@
+ 
+     const bool usePhoneUi{KRuntimePlatform::runtimePlatform().contains(QLatin1String("phone"))};
+     setupGUI(Save | Create | ToolBar, usePhoneUi ? QStringLiteral("dolphinuiforphones.rc") : QString() /* load the default dolphinui.rc file */);
++
++    // Keep Places as the navigation sidebar, including when an older saved
++    // layout restores the separate folder tree above it.
++    if (auto *foldersDock = findChild<DolphinDockWidget *>(QStringLiteral("foldersDock"))) {
++        foldersDock->hide();
++    }
++    if (QAction *foldersAction = actionCollection()->action(QStringLiteral("show_folders_panel"))) {
++        foldersAction->setChecked(false);
++        foldersAction->setEnabled(false);
++        foldersAction->setVisible(false);
++    }
+     stateChanged(QStringLiteral("new_file"));
+ 
+     QClipboard *clipboard = QApplication::clipboard();
+--- a/src/views/dolphinviewactionhandler.cpp
++++ b/src/views/dolphinviewactionhandler.cpp
+@@ -218,24 +218,13 @@
+ 
+     KSelectAction *viewModeActions = m_actionCollection->add<KSelectAction>(QStringLiteral("view_mode"));
+     viewModeActions->setText(i18nc("@action:intoolbar", "Change View Mode"));
+-    viewModeActions->setWhatsThis(xi18nc("@info:whatsthis View Mode Toolbutton", "This cycles through all view modes."));
++    viewModeActions->setWhatsThis(xi18nc("@info:whatsthis View Mode Toolbutton", "This opens the view mode menu."));
+     viewModeActions->addAction(iconsAction);
+     viewModeActions->addAction(compactAction);
+     viewModeActions->addAction(detailsAction);
+     viewModeActions->setToolBarMode(KSelectAction::MenuMode);
+-    viewModeActions->setToolButtonPopupMode(QToolButton::ToolButtonPopupMode::MenuButtonPopup);
++    viewModeActions->setToolButtonPopupMode(QToolButton::ToolButtonPopupMode::InstantPopup);
+     connect(viewModeActions, &KSelectAction::actionTriggered, this, &DolphinViewActionHandler::slotViewModeActionTriggered);
+-    connect(viewModeActions, &KSelectAction::triggered, this, [this, viewModeActions, iconsAction, compactAction, detailsAction]() {
+-        // Loop through the actions when button is clicked
+-        const auto currentAction = viewModeActions->currentAction();
+-        if (currentAction == iconsAction) {
+-            slotViewModeActionTriggered(compactAction);
+-        } else if (currentAction == compactAction) {
+-            slotViewModeActionTriggered(detailsAction);
+-        } else if (currentAction == detailsAction) {
+-            slotViewModeActionTriggered(iconsAction);
+-        }
+-    });
+ 
+     QAction *zoomInAction = KStandardAction::zoomIn(this, &DolphinViewActionHandler::zoomIn, m_actionCollection);
+     zoomInAction->setWhatsThis(i18nc("@info:whatsthis zoom in", "This increases the icon size."));

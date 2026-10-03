@@ -1,0 +1,51 @@
+--- a/src/dolphinui.rc
++++ b/src/dolphinui.rc
+@@ -32,8 +32,6 @@
+             <Action name="edit_find" />
+             <Separator />
+             <Action name="toggle_selection_mode" />
+-            <Action name="copy_to_inactive_split_view" />
+-            <Action name="move_to_inactive_split_view" />
+             <Action name="edit_select_all" />
+             <Action name="invert_selection" />
+         </Menu>
+@@ -50,9 +48,6 @@
+             <Action name="show_hidden_files" />
+             <Action name="act_as_admin" />
+             <Separator/>
+-            <Action name="split_view_menu" />
+-            <Action name="popout_split_view" />
+-            <Action name="split_stash" />
+             <Action name="redisplay" />
+             <Action name="stop" />
+             <Separator/>
+@@ -108,8 +103,6 @@
+         <Action name="go_forward" />
+         <Action name="view_mode" />
+         <Action name="url_navigators" />
+-        <Action name="split_view" />
+-        <Action name="split_stash" />
+         <Action name="toggle_search" />
+         <Action name="hamburger_menu" />
+     </ToolBar>
+--- a/src/dolphinuiforphones.rc
++++ b/src/dolphinuiforphones.rc
+@@ -32,8 +32,6 @@
+             <Action name="edit_find" />
+             <Separator />
+             <Action name="toggle_selection_mode" />
+-            <Action name="copy_to_inactive_split_view" />
+-            <Action name="move_to_inactive_split_view" />
+             <Action name="edit_select_all" />
+             <Action name="invert_selection" />
+         </Menu>
+@@ -50,9 +48,6 @@
+             <Action name="show_hidden_files" />
+             <Action name="act_as_admin" />
+             <Separator/>
+-            <Action name="split_view_menu" />
+-            <Action name="popout_split_view" />
+-            <Action name="split_stash" />
+             <Action name="redisplay" />
+             <Action name="stop" />
+             <Separator/>

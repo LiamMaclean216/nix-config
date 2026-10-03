@@ -1,0 +1,111 @@
+/* Palette and sizing are substituted from desktop/theme.nix. */
+QMainWindow {
+    background: #@background@;
+    color: #@foreground@;
+}
+QToolBar {
+    background: #@background@;
+    border: none;
+    padding: 8px 10px;
+    spacing: 5px;
+}
+QToolBar QToolButton {
+    border: none;
+    border-radius: @control-radius@px;
+    background: transparent;
+    padding: 7px;
+    color: #@foreground@;
+}
+QToolBar QToolButton:hover { background: #@surface@; }
+QToolBar QToolButton:pressed, QToolBar QToolButton:checked {
+    background: #@surface@;
+    color: #@accent@;
+}
+QToolBar QToolButton:disabled { color: #@muted@; }
+QToolBar QToolButton::menu-indicator { image: none; width: 0; height: 0; }
+QToolBar QToolButton::menu-button { width: 0; border: none; }
+QToolBar::separator { width: 5px; background: transparent; }
+QToolBar::handle { image: none; width: 0; }
+
+KUrlNavigator {
+    background: #@sidebar@;
+    border: none;
+    border-radius: @control-radius@px;
+    padding: 3px 6px;
+}
+KUrlNavigator QToolButton { padding: 5px 8px; }
+
+QDockWidget#placesDock {
+    background: #@sidebar@;
+    border: none;
+    min-width: @sidebar-width@px;
+    font-family: "@font@";
+}
+QDockWidget#placesDock::title {
+    background: #@sidebar@;
+    color: #@muted@;
+    padding: 10px 16px 4px;
+    text-align: left;
+}
+PlacesPanel {
+    background: #@sidebar@;
+    color: #@foreground@;
+    border: none;
+    padding: 8px 10px;
+    qproperty-spacing: 3;
+    show-decoration-selected: 1;
+    outline: 0;
+}
+PlacesPanel::item {
+    border: none;
+    border-radius: @control-radius@px;
+    padding: 5px 8px;
+}
+PlacesPanel::item:hover { background: #@surface@; }
+PlacesPanel::item:selected {
+    background: #@sidebarSelection@;
+    color: #@foreground@;
+    border: none;
+    border-radius: @control-radius@px;
+}
+QMainWindow::separator { background: #@background@; width: 4px; height: 4px; }
+QStatusBar {
+    background: #@background@;
+    color: #@muted@;
+    border: none;
+    padding: 5px 12px;
+}
+QStatusBar::item { border: none; }
+QMenu {
+    background: #@background@;
+    color: #@foreground@;
+    border: 1px solid #@surface@;
+    border-radius: @control-radius@px;
+    padding: 7px;
+}
+QMenu::item {
+    padding: 7px 28px 7px 12px;
+    border-radius: 7px;
+}
+QMenu::item:selected { background: #@surface@; }
+QMenu::separator { height: 1px; background: #@surface@; margin: 6px 8px; }
+
+KOpenWithDialog { background: #@background@; color: #@foreground@; }
+KOpenWithDialog QLabel { padding: 4px 0; }
+KOpenWithDialog KApplicationView {
+    background: #@sidebar@;
+    border: 1px solid #@surface@;
+    border-radius: @control-radius@px;
+    padding: 6px;
+    outline: 0;
+}
+KOpenWithDialog KApplicationView::item {
+    border: none;
+    border-radius: 6px;
+    padding: 5px 8px;
+}
+KOpenWithDialog KApplicationView::item:hover { background: #@surface@; }
+KOpenWithDialog KApplicationView::item:selected {
+    background: #@selection@;
+    color: #@foreground@;
+}

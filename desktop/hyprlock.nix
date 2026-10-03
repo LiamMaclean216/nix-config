@@ -208,7 +208,7 @@
   };
 
   hyprlockConfig = builtins.replaceStrings
-    (["@HYPRLOCK_SOLAR@" "@HYPRLOCK_WINDOWS@" "@HYPRLOCK_WINDOWS_ICON@" "@WALLPAPER@" "@radius@" "@font@"]
+    (["@HYPRLOCK_SOLAR@" "@HYPRLOCK_WINDOWS@" "@HYPRLOCK_WINDOWS_ICON@" "@WALLPAPER@" "@radius@" "@font@" "@controlRadius@" "@fadeSpeed@"]
       ++ map (name: "@${name}@") (builtins.attrNames theme.colors))
     ([
       "${hyprlockSolar}/bin/hyprlock-solar"
@@ -217,6 +217,8 @@
       "${./background.webp}"
       (toString theme.radius)
       theme.font
+      (toString theme.qt.controlRadius)
+      (toString theme.fadeSpeed)
     ] ++ builtins.attrValues theme.colors)
     (builtins.readFile ./hyprlock.conf);
 in {

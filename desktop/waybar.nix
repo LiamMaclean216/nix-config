@@ -30,19 +30,34 @@ in
 {
   programs.waybar = {
     enable = true;
-    package = pkgs.waybar;
+    # Waybar otherwise forces widget opacity to zero immediately on SIGUSR1,
+    # bypassing GTK transitions. Its existing .hidden class drives the fade.
+    package = pkgs.waybar.overrideAttrs (old: {
+      postPatch = (old.postPatch or "") + ''
+        substituteInPlace src/bar.cpp \
+          --replace-fail 'window.set_opacity(0);' '// Opacity is animated by the shared GTK style.'
+      '';
+    });
 
     settings.mainBar = {
       layer = "overlay";
       position = "bottom";
       exclusive = false;
       passthrough = true;
-      height = 32;
+      height = 40;
       spacing = 6;
       margin = "0 5 5 0";
       modules-left = [ ];
       modules-center = [ ];
       modules-right = [  "clock" ];
+      # Keep the fading clock above windows until its alpha reaches zero.
+      # Waybar's built-in invisible mode otherwise moves it behind them at once.
+      modes.invisible = {
+        layer = "overlay";
+        exclusive = false;
+        passthrough = true;
+        visible = false;
+      };
 
       clock = {
         format = "{:%a %d %b  %H:%M}";
@@ -50,11 +65,11 @@ in
       };
     };
 
-    style = theme.gtkColors + ''
+    style = theme.renderCss ''
       * {
         border: none;
         border-radius: 0;
-        font-family: "${theme.font}", "Noto Sans", sans-serif;
+        font-family: "@font@", "Noto Sans", sans-serif;
         font-size: 12pt;
         font-weight: 500;
         min-height: 0;
@@ -65,16 +80,21 @@ in
         color: @foreground;
         padding: 0;
         margin: 0;
+        opacity: 1;
+        transition: opacity ${toString (theme.fadeSpeed / 10.0)}s ease;
       }
 
+      window#waybar.hidden { opacity: 0; }
+
       #clock {
-        background: @background;
-        border-radius: ${toString theme.radius}px;
+        background-color: alpha(@background, @glass-opacity@);
+        background-image: @glass-sheen@;
+        border-radius: @radius@px;
         padding: 11px 20px 9px 20px;
         letter-spacing: 0.3px;
         color: @foreground;
         border: none;
-        font-family: "${theme.font}", "Noto Sans", sans-serif;
+        font-family: "@font@", "Noto Sans", sans-serif;
         font-weight: 400;
       }
 

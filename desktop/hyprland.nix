@@ -2,6 +2,12 @@
 
 let
   theme = import ./theme.nix;
+  luaValue = value:
+    if builtins.isAttrs value then "{ " + lib.concatStringsSep ", "
+      (lib.mapAttrsToList (key: item: "${key} = ${luaValue item}") value) + " }"
+    else if builtins.isBool value then (if value then "true" else "false")
+    else if builtins.isString value && lib.hasPrefix "0x" value then value
+    else builtins.toJSON value;
   # Script to hide waybar when cursor is near bottom-right
   waybarHideScript = pkgs.writeShellScript "waybar-cursor-hide" ''
     set -euo pipefail
@@ -33,12 +39,12 @@ let
       fi
       
       if [ "$in_region" = "true" ] && [ "$is_hidden" = "false" ]; then
-        # SIGUSR1 = hide waybar
+        # SIGUSR1 toggles visibility, letting Hyprland fade the layer out.
         pkill -SIGUSR1 waybar 2>/dev/null || true
         is_hidden=true
       elif [ "$in_region" = "false" ] && [ "$is_hidden" = "true" ]; then
-        # SIGUSR2 = show waybar
-        pkill -SIGUSR2 waybar 2>/dev/null || true
+        # Use the same visibility toggle to fade back in; SIGUSR2 reloads.
+        pkill -SIGUSR1 waybar 2>/dev/null || true
         is_hidden=false
       fi
       
@@ -75,8 +81,8 @@ in
   };
 
   xdg.configFile."hypr/hyprland.lua".text = lib.mkBefore (builtins.replaceStrings
-    [ "@GLASS@" "@BACKGROUND@" "@WAYBAR_HIDE@" "@SESSION_START@" ]
-    [ "${pkgs.hyprglass}/lib/libhyprglass.so" theme.colors.background
+    [ "@GLASS@" "@GLASS_CONFIG@" "@FADE_SPEED@" "@WINDOW_RADIUS@" "@WINDOW_GEOMETRY_ANIMATIONS@" "@WAYBAR_HIDE@" "@SESSION_START@" ]
+    [ "${pkgs.hyprglass}/lib/libhyprglass.so" (luaValue theme.glass.compositor) (toString theme.fadeSpeed) (toString theme.windowRadius) (luaValue theme.windowGeometryAnimations)
       "${waybarHideScript}"
       "${pkgs.dbus}/bin/dbus-update-activation-environment --systemd --all && systemctl --user stop hyprland-session.target && systemctl --user start hyprland-session.target"
     ]

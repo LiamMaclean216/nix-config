@@ -15,7 +15,7 @@ button {
     padding: 24px 20px;
     border: none;
     border-radius: @radius@px;
-    background-color: alpha(@background, 0.20);
+    background-color: alpha(@background, @glass-opacity@);
     background-repeat: no-repeat;
     background-position: center 38%, center;
     background-size: 48px, 100% 100%;
@@ -25,7 +25,7 @@ button:hover {
     background-color: rgba(255,255,255,0.16);
 }
 button:active { background-color: rgba(255,255,255,0.25); }
-#reboot { background-image: url("restart.png"), linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03)); }
-#shutdown { background-image: url("power.png"), linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03)); }
-#logout { background-image: url("logout.png"), linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03)); }
-#windows { background-image: url("windows.png"), linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03)); }
+#reboot { background-image: url("restart.png"), @glass-sheen@; }
+#shutdown { background-image: url("power.png"), @glass-sheen@; }
+#logout { background-image: url("logout.png"), @glass-sheen@; }
+#windows { background-image: url("windows.png"), @glass-sheen@; }

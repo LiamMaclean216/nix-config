@@ -2,7 +2,7 @@
 let
   theme = import ../theme.nix;
   themeJson = builtins.toFile "voice-input-theme.json" (builtins.toJSON {
-    inherit (theme) colors radius font;
+    inherit (theme) colors radius font glass;
   });
   python = python3.withPackages (ps: [ps.pygobject3 ps.websockets]);
 in stdenvNoCC.mkDerivation {

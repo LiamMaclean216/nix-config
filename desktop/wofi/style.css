@@ -8,14 +8,14 @@
     box-shadow: none;
 }
 window {
-    background-color: alpha(@background, 0.20);
+    background-color: alpha(@background, @glass-opacity@);
     border-radius: @radius@px;
     color: @foreground;
 }
 #outer-box {
     padding: 20px;
     border-radius: @radius@px;
-    background-image: linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%, rgba(255,255,255,0.03));
+    background-image: @glass-sheen@;
 }
 #input {
     margin: 0 0 14px;

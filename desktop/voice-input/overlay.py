@@ -287,17 +287,17 @@ class DictationOverlay:
             #voice-input { background: transparent; }
             #dictation-card {
               background-color: @background;
-              background-image: linear-gradient(145deg,
-                rgba(255,255,255,0.06), rgba(255,255,255,0.01) 45%,
-                rgba(255,255,255,0.03));
+              background-image: @glass-sheen@;
               border: none;
               border-radius: @radius@px; padding: 12px 18px 12px 12px;
             }
-            #dictation-card.live-glass { background-color: alpha(@background, 0.20); }
+            #dictation-card.live-glass { background-color: alpha(@background, @glass-opacity@); }
             #dictation-card label { font-family: "@font@", "Noto Sans", sans-serif; }
             #dictation-text { color: @foreground; font-size: 15px; }
         """).replace("@radius@", str(THEME["radius"]))
-           .replace("@font@", THEME["font"]).encode())
+           .replace("@font@", THEME["font"])
+           .replace("@glass-sheen@", THEME["glass"]["sheen"])
+           .replace("@glass-opacity@", str(THEME["glass"]["surfaceOpacity"])).encode())
         Gtk.StyleContext.add_provider_for_screen(
             Gdk.Screen.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )

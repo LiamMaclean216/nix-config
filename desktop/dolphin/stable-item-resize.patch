@@ -1,0 +1,26 @@
+--- a/src/kitemviews/private/kitemlistviewanimation.cpp
++++ b/src/kitemviews/private/kitemlistviewanimation.cpp
+@@ -139,17 +139,15 @@
+             return;
+         }
+ 
+-        propertyAnim = new QPropertyAnimation(widget, "size");
+-        propertyAnim->setDuration(animationDuration);
+-        propertyAnim->setEndValue(newSize);
+-        break;
++        // Keep rows and tiles at their final size throughout layout updates.
++        widget->resize(newSize);
++        return;
+     }
+ 
+     case IconResizeAnimation: {
+-        propertyAnim = new QPropertyAnimation(widget, QByteArrayLiteral("iconSize"));
+-        propertyAnim->setDuration(animationDuration);
+-        propertyAnim->setEndValue(endValue);
+-        break;
++        // Apply zoom changes without interpolating the icon dimensions.
++        widget->setProperty("iconSize", endValue);
++        return;
+     }
+ 
+     default:

@@ -1,0 +1,50 @@
+--- a/src/dolphincontextmenu.cpp
++++ b/src/dolphincontextmenu.cpp
+@@ -33,6 +33,33 @@
+ #include <QClipboard>
+ #include <QKeyEvent>
+ #include <QAction>
++
++namespace
++{
++// Keep Ark's real actions and their extraction/error/trash handling. Only move
++// them out of the submenu; matching the theme icon also works across locales.
++QList<QAction *> takeArchiveActions(QMenu *menu)
++{
++    const auto menuActions = menu->actions();
++    for (QAction *action : menuActions) {
++        if (action->icon().name() == QLatin1String("archive-extract")) {
++            const auto archiveActions = action->menu() ? action->menu()->actions() : QList<QAction *>{action};
++            menu->removeAction(action);
++            return archiveActions;
++        }
++        if (QMenu *submenu = action->menu()) {
++            const auto archiveActions = takeArchiveActions(submenu);
++            if (!archiveActions.isEmpty()) {
++                if (submenu->isEmpty()) {
++                    menu->removeAction(action);
++                }
++                return archiveActions;
++            }
++        }
++    }
++    return {};
++}
++}
+ 
+ DolphinContextMenu::DolphinContextMenu(DolphinMainWindow *parent,
+                                        const KFileItem &fileInfo,
+@@ -54,6 +81,13 @@
+     QApplication::instance()->installEventFilter(this);
+ 
+     addAllActions();
++
++    const auto archiveActions = takeArchiveActions(this);
++    if (!archiveActions.isEmpty()) {
++        QAction *firstAction = actions().isEmpty() ? nullptr : actions().first();
++        insertActions(firstAction, archiveActions);
++        insertSeparator(firstAction);
++    }
+ }
+ 
+ DolphinContextMenu::~DolphinContextMenu()

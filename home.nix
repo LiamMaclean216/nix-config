@@ -117,13 +117,6 @@ in {
     recursive = true;
   };
 
-  # Configure Dolphin to use Alacritty as the terminal
-  home.file.".config/kdeglobals".text = ''
-    [General]
-    TerminalApplication=alacritty
-    TerminalService=alacritty.desktop
-  '';
-
   home.activation.createPythonVenv = lib.hm.dag.entryAfter ["writeBoundary"] ''
     VENV="$HOME/.venv"
     PYTHON="${pkgs.python311}/bin/python3"
@@ -164,6 +157,8 @@ in {
     ./programs/lazydocker.nix
     ./programs/fastfetch.nix
     ./desktop/hyprland.nix
+    ./desktop/appearance.nix
+    ./desktop/dolphin.nix
     ./desktop/hyprpaper.nix
     ./desktop/hypridle.nix
     ./desktop/hyprlock.nix

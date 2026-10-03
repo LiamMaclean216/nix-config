@@ -1,0 +1,44 @@
+--- a/src/dolphinmainwindow.cpp
++++ b/src/dolphinmainwindow.cpp
+@@ -51,6 +51,7 @@
+ #include <KJobWidgets>
+ #include <KLocalizedString>
+ #include <KMessageBox>
++#include <KPluginFactory>
+ #include <KProtocolInfo>
+ #include <KProtocolManager>
+ #include <KRecentFilesAction>
+@@ -2308,9 +2309,11 @@
+                                      "This allows quick switching between any folders.</para>")
+                               + panelWhatsThis);
+ 
+-    // Setup "Terminal"
++    // Setup "Terminal" only when its embedded terminal provider is available.
++    // Saved layouts can request this dock even on systems without Konsole.
+ #if HAVE_TERMINAL
+-    if (KAuthorized::authorize(QStringLiteral("shell_access"))) {
++    if (KAuthorized::authorize(QStringLiteral("shell_access"))
++        && KPluginFactory::loadFactory(KPluginMetaData(QStringLiteral("kf6/parts/konsolepart"))).plugin) {
+         DolphinDockWidget *terminalDock = new DolphinDockWidget(i18nc("@title:window Shell terminal", "Terminal"));
+         terminalDock->setLocked(lock);
+         terminalDock->setObjectName(QStringLiteral("terminalDock"));
+@@ -2450,13 +2453,17 @@
+     panelsMenu->addAction(ac->action(QStringLiteral("show_information_panel")));
+ #endif
+     panelsMenu->addAction(ac->action(QStringLiteral("show_folders_panel")));
+-    panelsMenu->addAction(ac->action(QStringLiteral("show_terminal_panel")));
++    if (QAction *terminalAction = ac->action(QStringLiteral("show_terminal_panel"))) {
++        panelsMenu->addAction(terminalAction);
++    }
+     panelsMenu->addSeparator();
+     panelsMenu->addAction(lockLayoutAction);
+     panelsMenu->addSeparator();
+     panelsMenu->addAction(actionShowAllPlaces);
+     panelsMenu->addAction(focusPlacesPanel);
+-    panelsMenu->addAction(ac->action(QStringLiteral("focus_terminal_panel")));
++    if (QAction *focusTerminalAction = ac->action(QStringLiteral("focus_terminal_panel"))) {
++        panelsMenu->addAction(focusTerminalAction);
++    }
+ 
+     connect(panelsMenu->menu(), &QMenu::aboutToShow, this, [actionShowAllPlaces] {
+         actionShowAllPlaces->setEnabled(DolphinPlacesModelSingleton::instance().placesModel()->hiddenCount());

@@ -3,21 +3,7 @@ hl.plugin.load("@GLASS@")
 -- Plugin loading is completed after the first parse, then Hyprland parses again.
 if hl.get_config("plugin.hyprglass.enabled") ~= nil then
     hl.config({
-        plugin = { hyprglass = {
-            enabled = false, manage_window_blur = false, default_theme = "dark",
-            blur_strength = 1.6, blur_iterations = 3,
-            refraction_strength = 0.22, chromatic_aberration = 0.06,
-            fresnel_strength = 0.18, specular_strength = 0.22,
-            glass_opacity = 1.0, edge_thickness = 0.06,
-            tint_color = 0x@BACKGROUND@b3, lens_distortion = 0.08,
-            brightness = 0.90, saturation = 0.80, adaptive_dim = 0.35,
-            layers = {
-                enabled = true, namespaces = "wofi, voice-input, logout_dialog",
-                mask_mode = "alpha",
-                namespace_mask_thresholds = "wofi=0.05, voice-input=0.05, logout_dialog=0.05",
-                live_resample = true, live_resample_fps = 60, manage_blur = true,
-            },
-        } },
+        plugin = { hyprglass = @GLASS_CONFIG@ },
     })
 end
 hl.config({
@@ -26,7 +12,7 @@ hl.config({
         gaps_in = 5, gaps_out = 10, resize_on_border = true, border_size = 1,
         col = { active_border = "rgba(ffffff88)" },
     },
-    decoration = { rounding = 8 },
+    decoration = { rounding = @WINDOW_RADIUS@ },
     input = { accel_profile = "flat", sensitivity = 0.0 },
 })
 hl.monitor({ output = "", mode = "3440x1440@240", position = "auto", scale = 1 })
@@ -50,18 +36,16 @@ hl.on("hyprland.start", function()
 end)
 
 hl.curve("fluent_decel", { type = "bezier", points = { {0, 0.2}, {0.4, 1} } })
-hl.curve("easeOutCirc", { type = "bezier", points = { {0, 0.55}, {0.45, 1} } })
-hl.curve("easeOutCubic", { type = "bezier", points = { {0.33, 1}, {0.68, 1} } })
-hl.curve("easeinoutsine", { type = "bezier", points = { {0.37, 0}, {0.63, 1} } })
-hl.animation({ leaf = "windowsIn", enabled = true, speed = 1.5, bezier = "easeinoutsine", style = "popin 60%" })
-hl.animation({ leaf = "windowsOut", enabled = true, speed = 1.5, bezier = "easeOutCubic", style = "popin 60%" })
-hl.animation({ leaf = "windowsMove", enabled = true, speed = 1.5, bezier = "easeinoutsine", style = "slide" })
+-- Keep window geometry steady; opacity transitions remain independent below.
+for _, leaf in ipairs({ "windowsIn", "windowsOut", "windowsMove" }) do
+    hl.animation({ leaf = leaf, enabled = @WINDOW_GEOMETRY_ANIMATIONS@ })
+end
 -- Shared 250 ms fade for windows, Wayland menus/tooltips, and all layer surfaces
 -- (Wofi, voice-input, Wlogout, Mako, Waybar, and future overlays). The fadeIn,
 -- fadeLayersIn/Out and fadePopupsIn/Out leaves inherit from "fade"; keep their
 -- timing here and avoid per-app no_anim rules. Layer geometry stays stationary.
 for _, leaf in ipairs({ "fade", "layers" }) do
-    hl.animation({ leaf = leaf, enabled = true, speed = 2.5, bezier = "fluent_decel",
+    hl.animation({ leaf = leaf, enabled = true, speed = @FADE_SPEED@, bezier = "fluent_decel",
         style = leaf == "layers" and "fade" or nil })
 end
 hl.animation({ leaf = "border", enabled = false })

@@ -5,13 +5,20 @@ the same material and remains anchored 64 logical pixels above the bottom center
 Both surfaces keep their text and controls separate from the compositor-rendered
 backdrop. There are no screenshots, temporary backdrop images, or capture loops.
 
-The material is configured in `../hyprland.lua`: a dense neutral tint, three blur
+The shared palette and material are configured in `../theme.nix`: a warm charcoal tint, three blur
 iterations, restrained edge refraction and highlights, and background updates
-capped at 60 fps when the scene changes. Only the `wofi` and `voice-input` layer
-namespaces and Wlogout's `logout_dialog` namespace are enabled; ordinary windows
-and the other desktop panels are excluded.
+capped at 60 fps when the scene changes. The `wofi`, `voice-input`, `waybar`, and
+Wlogout `logout_dialog` layer namespaces are enabled; ordinary windows are excluded.
 GTK supplies the rounded alpha mask. Layout is in `../wofi/style.css` and
 `../voice-input/overlay.py`.
+
+The bottom-right clock uses the same material. Its visibility toggle fades for
+250 ms using GTK's `.hidden` class; the pinned Waybar package is patched to avoid
+forcing opacity to zero before that transition can run. Both hide and show use
+SIGUSR1. Timing lives in `theme.nix` as `fadeSpeed` (Hyprland tenths of a second).
+
+Dolphin and its app picker use an opaque Qt interpretation of this palette.
+See `../README.md` for the shared appearance entrypoint and Dolphin customizations.
 
 `launcher.nix` packages Wofi with native focus dismissal and corrected CSS sizing.
 Dismissal watches the window's active state so arrow-key navigation between
