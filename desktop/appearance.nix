@@ -15,7 +15,11 @@ in {
     enable = true;
     platformTheme = {
       name = "kde6";
-      package = pkgs.kdePackages.plasma-integration;
+      # Hyprland has no KDE application-chooser portal. Keep KDE's palette and
+      # use KIO's native, styled Open With dialog for application selection.
+      package = pkgs.kdePackages.plasma-integration.overrideAttrs (old: {
+        patches = (old.patches or []) ++ [./qt/native-open-with.patch];
+      });
     };
     style.name = "kvantum";
   };

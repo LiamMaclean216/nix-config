@@ -1,0 +1,26 @@
+--- a/src/bar.cpp
++++ b/src/bar.cpp
+@@ -423,6 +423,12 @@
+     anchors[GTK_LAYER_SHELL_EDGE_RIGHT] = FALSE;
+   }
+ 
++  // Natural-size bottom-right clock without a screen-wide transparent layer.
++  if (position == Gtk::POS_BOTTOM && config.get("anchor-right", false).asBool()) {
++    anchors[GTK_LAYER_SHELL_EDGE_LEFT] = FALSE;
++    anchors[GTK_LAYER_SHELL_EDGE_RIGHT] = TRUE;
++  }
++
+   for (auto edge : {GTK_LAYER_SHELL_EDGE_LEFT, GTK_LAYER_SHELL_EDGE_RIGHT, GTK_LAYER_SHELL_EDGE_TOP,
+                     GTK_LAYER_SHELL_EDGE_BOTTOM}) {
+     gtk_layer_set_anchor(window.gobj(), edge, anchors[edge]);
+@@ -646,7 +652,9 @@
+   int y;
+   switch (position) {
+     case Gtk::POS_BOTTOM:
+-      if (width + margins_.left + margins_.right >= monitor_geometry.width)
++      if (config.get("anchor-right", false).asBool())
++        x = monitor_geometry.width - width - margins_.right;
++      else if (width + margins_.left + margins_.right >= monitor_geometry.width)
+         x = margins_.left;
+       else
+         x = (monitor_geometry.width - width) / 2;

@@ -33,6 +33,7 @@ in
     # Waybar otherwise forces widget opacity to zero immediately on SIGUSR1,
     # bypassing GTK transitions. Its existing .hidden class drives the fade.
     package = pkgs.waybar.overrideAttrs (old: {
+      patches = (old.patches or [ ]) ++ [ ./waybar-clock-anchor.patch ];
       postPatch = (old.postPatch or "") + ''
         substituteInPlace src/bar.cpp \
           --replace-fail 'window.set_opacity(0);' '// Opacity is animated by the shared GTK style.'
@@ -42,6 +43,9 @@ in
     settings.mainBar = {
       layer = "overlay";
       position = "bottom";
+      # One horizontal anchor lets GTK request the clock's natural width.
+      # The local package patch implements this without a fixed date-text width.
+      anchor-right = true;
       exclusive = false;
       passthrough = true;
       height = 40;

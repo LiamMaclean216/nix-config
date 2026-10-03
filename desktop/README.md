@@ -21,11 +21,15 @@ including folder counts and selected-file details. Light yellow folder icons and
 rounded Places selection use `colors.folder` and `colors.selection`.
 Places and the file list share the same selection highlight.
 The information-panel preview, file rows and icon zoom update without size transitions.
+The right information panel collapses when filenames need more room and returns
+when the window is wider; explicitly hiding it keeps it hidden.
 Activation removes the Music bookmark from Places while keeping the folder.
 The details list has no side padding or inline folder-expansion gutter.
 
 `dolphin.nix` installs the styled Dolphin, supplies the application menu that
 KService needs outside Plasma, and refreshes its cache after package activation.
+The KDE integration uses the styled native Open With dialog, so Other Application
+works without a Plasma application-chooser portal.
 `dolphin-context-menu.nix` disables Activities, Tags and split context actions.
 The small patches in `dolphin/` remove Split from the toolbar and menus, omit the
 embedded terminal when Konsole is unavailable, and move Ark's own extraction

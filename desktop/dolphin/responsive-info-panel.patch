@@ -1,0 +1,191 @@
+--- a/src/dolphinmainwindow.cpp
++++ b/src/dolphinmainwindow.cpp
+@@ -22,6 +22,10 @@
+ #include "dolphinurlnavigatorscontroller.h"
+ #include "dolphinviewcontainer.h"
+ #include "global.h"
++#include "kitemviews/kitemlistcontainer.h"
++#include "kitemviews/kitemlistcontroller.h"
++#include "kitemviews/kitemlistheader.h"
++#include "kitemviews/kitemlistview.h"
+ #include "middleclickactioneventfilter.h"
+ #include "panels/folders/folderspanel.h"
+ #include "panels/places/placespanel.h"
+@@ -57,6 +61,7 @@
+ #include <KRecentFilesAction>
+ #include <KRuntimePlatform>
+ #include <KShell>
++#include <KSharedConfig>
+ #include <KShortcutsDialog>
+ #include <KStandardAction>
+ #include <KSycoca>
+@@ -82,6 +87,7 @@
+ #include <QMenuBar>
+ #include <QPushButton>
+ #include <QShowEvent>
++#include <QStyle>
+ #include <QStandardPaths>
+ #include <QTimer>
+ #include <QToolButton>
+@@ -167,6 +173,7 @@
+     m_tabWidget = new DolphinTabWidget(navigatorsWidgetAction, this);
+     m_tabWidget->setObjectName("tabWidget");
+     connect(m_tabWidget, &DolphinTabWidget::activeViewChanged, this, &DolphinMainWindow::activeViewChanged);
++    connect(m_tabWidget, &DolphinTabWidget::activeViewChanged, this, &DolphinMainWindow::scheduleInformationPanelUpdate);
+     connect(m_tabWidget, &DolphinTabWidget::tabCountChanged, this, &DolphinMainWindow::tabCountChanged);
+     connect(m_tabWidget, &DolphinTabWidget::currentUrlChanged, this, &DolphinMainWindow::updateWindowTitle);
+     setCentralWidget(m_tabWidget);
+@@ -211,6 +218,14 @@
+         foldersAction->setEnabled(false);
+         foldersAction->setVisible(false);
+     }
++#if HAVE_BALOO
++    // A saved compact-window layout must not turn an automatic collapse into a
++    // permanent user preference. Restore the logical choice after setupGUI().
++    const KConfigGroup infoSettings(KSharedConfig::openConfig(), QStringLiteral("InformationPanel"));
++    if (infoSettings.hasKey("ResponsiveVisible")) {
++        findChild<DolphinDockWidget *>(QStringLiteral("infoDock"))->setVisible(infoSettings.readEntry("ResponsiveVisible", true));
++    }
++#endif
+     stateChanged(QStringLiteral("new_file"));
+ 
+     QClipboard *clipboard = QApplication::clipboard();
+@@ -611,6 +626,10 @@
+ 
+ bool DolphinMainWindow::event(QEvent *event)
+ {
++    if (event->type() == QEvent::Resize || event->type() == QEvent::LayoutRequest || event->type() == QEvent::Show) {
++        scheduleInformationPanelUpdate();
++    }
++
+     if (event->type() == QEvent::ShortcutOverride) {
+         const QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+         if (keyEvent->key() == Qt::Key_Space && m_activeViewContainer->view()->handleSpaceAsNormalKey()) {
+@@ -620,6 +639,85 @@
+     }
+ 
+     return KXmlGuiWindow::event(event);
++}
++
++void DolphinMainWindow::scheduleInformationPanelUpdate()
++{
++    if (m_informationPanelUpdatePending) {
++        return;
++    }
++    m_informationPanelUpdatePending = true;
++    // Measure after the dock layout and file viewport have received their sizes.
++    QTimer::singleShot(0, this, [this] {
++        m_informationPanelUpdatePending = false;
++        updateInformationPanelVisibility();
++    });
++}
++
++void DolphinMainWindow::setInformationPanelPreference(bool visible)
++{
++    KConfigGroup settings(KSharedConfig::openConfig(), QStringLiteral("InformationPanel"));
++    if (!settings.hasKey("ResponsiveVisible") || settings.readEntry("ResponsiveVisible", !visible) != visible) {
++        settings.writeEntry("ResponsiveVisible", visible);
++        settings.sync();
++    }
++}
++
++void DolphinMainWindow::updateInformationPanelVisibility()
++{
++#if HAVE_BALOO
++    if (!isVisible() || isMinimized() || !m_activeViewContainer) {
++        return;
++    }
++    auto *dock = findChild<DolphinDockWidget *>(QStringLiteral("infoDock"));
++    if (!dock || dock->isFloating() || (!dock->isVisible() && !m_informationPanelAutoHidden)) {
++        return;
++    }
++    DolphinView *view = m_activeViewContainer->view();
++    auto *container = view->findChild<KItemListContainer *>();
++    if (!container || !container->controller()->view()) {
++        return;
++    }
++
++    const int characterWidth = view->fontMetrics().averageCharWidth();
++    qreal minimumFileWidth = std::max(360, characterWidth * 48);
++    if (view->viewMode() == DolphinView::DetailsView) {
++        const auto *listView = container->controller()->view();
++        const auto *header = listView->header();
++        // Reserve a readable filename area in addition to the actual metadata
++        // columns, rather than assuming every window has the same sidebar size.
++        minimumFileWidth = std::max(280, characterWidth * 32) + header->leftPadding() + header->rightPadding();
++        for (const QByteArray &role : listView->visibleRoles()) {
++            if (role != QByteArrayLiteral("text")) {
++                minimumFileWidth += header->columnWidth(role);
++            }
++        }
++    }
++
++    const int viewportWidth = container->viewport()->width();
++    const int separatorWidth = style()->pixelMetric(QStyle::PM_DockWidgetSeparatorExtent);
++    const int hysteresis = std::max(80, characterWidth * 10);
++    if (m_informationPanelAutoHidden) {
++        if (viewportWidth - m_informationPanelWidth - separatorWidth < minimumFileWidth + hysteresis) {
++            return;
++        }
++        m_informationPanelResponsiveChange = true;
++        m_informationPanelAutoHidden = false;
++        dock->show();
++        resizeDocks({dock}, {m_informationPanelWidth}, Qt::Horizontal);
++        m_informationPanelResponsiveChange = false;
++    } else if (viewportWidth < minimumFileWidth) {
++        m_informationPanelWidth = dock->width();
++        setInformationPanelPreference(true);
++        m_informationPanelResponsiveChange = true;
++        m_informationPanelAutoHidden = true;
++        dock->hide();
++        // Keep F11/menu checked for the logical preference. Toggling it while
++        // collapsed explicitly disables the panel and cancels auto-restoration.
++        dock->toggleViewAction()->setChecked(true);
++        m_informationPanelResponsiveChange = false;
++    }
++#endif
+ }
+ 
+ void DolphinMainWindow::showEvent(QShowEvent *event)
+@@ -2253,6 +2351,17 @@
+     infoDock->setWidget(infoPanel);
+ 
+     createPanelAction(QIcon::fromTheme(QStringLiteral("documentinfo")), Qt::Key_F11, infoDock, QStringLiteral("show_information_panel"));
++    connect(infoDock->toggleViewAction(), &QAction::triggered, this, [this](bool visible) {
++        m_informationPanelAutoHidden = false;
++        setInformationPanelPreference(visible);
++        scheduleInformationPanelUpdate();
++    });
++    connect(infoDock, &QDockWidget::visibilityChanged, this, [this, infoDock](bool visible) {
++        if (!m_informationPanelResponsiveChange && isVisible() && !isMinimized() && (visible || infoDock->isHidden())) {
++            m_informationPanelAutoHidden = false;
++            setInformationPanelPreference(visible);
++        }
++    });
+ 
+     addDockWidget(Qt::RightDockWidgetArea, infoDock);
+     connect(this, &DolphinMainWindow::urlChanged, infoPanel, &InformationPanel::setUrl);
+--- a/src/dolphinmainwindow.h
++++ b/src/dolphinmainwindow.h
+@@ -679,6 +679,10 @@
+      */
+     void setupDockWidgets();
+ 
++    void scheduleInformationPanelUpdate();
++    void updateInformationPanelVisibility();
++    void setInformationPanelPreference(bool visible);
++
+     void updateFileAndEditActions();
+     void updateViewActions();
+     void updateGoActions();
+@@ -761,6 +765,10 @@
+     TerminalPanel *m_terminalPanel;
+     PlacesPanel *m_placesPanel;
+     bool m_tearDownFromPlacesRequested;
++    bool m_informationPanelAutoHidden = false;
++    bool m_informationPanelResponsiveChange = false;
++    bool m_informationPanelUpdatePending = false;
++    int m_informationPanelWidth = 0;
+ 
+     KToolBarPopupAction *m_backAction;
+     KToolBarPopupAction *m_forwardAction;

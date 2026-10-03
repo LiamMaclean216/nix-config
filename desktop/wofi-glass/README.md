@@ -14,6 +14,9 @@ GTK supplies the rounded alpha mask. Layout is in `../wofi/style.css` and
 
 The Rust core and original GPU shader live in `../hyprglass/rust`; see
 `../hyprglass/README.md` for architecture, material controls and rendering tests.
+The launcher and clock use analytic rounded geometry with filtered coverage;
+Waybar's local package patch anchors its naturally sized clock surface at the
+right edge. The tint is denser, with gentler refraction and smoother highlights.
 
 The bottom-right clock uses the same material. Its visibility toggle fades for
 250 ms using GTK's `.hidden` class; the pinned Waybar package is patched to avoid

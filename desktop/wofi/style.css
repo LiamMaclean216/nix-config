@@ -9,35 +9,55 @@
 }
 window {
     background-color: alpha(@background, @glass-opacity@);
+    border: 1px solid alpha(@foreground, 0.16);
     border-radius: @radius@px;
     color: @foreground;
 }
 #outer-box {
-    padding: 20px;
+    padding: 22px;
     border-radius: @radius@px;
     background-image: @glass-sheen@;
 }
 #input {
-    margin: 0 0 14px;
-    padding: 15px 16px;
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    border: 1px solid alpha(@foreground, 0.12);
     border-radius: 16px;
-    background: alpha(@shadow, 0.28);
+    background: alpha(@sidebar, 0.74);
     color: @foreground;
     font-size: 20px;
-    caret-color: @foreground;
+    font-weight: 500;
+    caret-color: @accent;
 }
-#input image { color: alpha(@foreground, 0.7); margin-right: 10px; }
+#input:focus { border-color: alpha(@accent, 0.42); }
+#input image { color: @muted; margin-right: 12px; }
+#input selection { background: alpha(@accent, 0.3); color: @foreground; }
 #scroll, #inner-box { background: transparent; }
 #scroll undershoot, #scroll overshoot { background: none; box-shadow: none; }
 #entry {
-    padding: 10px 12px;
+    padding: 5px 10px;
     margin: 2px 0;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
     border-radius: 14px;
     background: transparent;
 }
+#entry:hover { background-color: alpha(@foreground, 0.05); }
 #entry:selected {
-    background-image: linear-gradient(110deg, rgba(255,255,255,0.22), rgba(255,255,255,0.10));
+    border-color: alpha(@accent, 0.13);
+    border-left-color: @accent;
+    background-color: alpha(@selection, 0.84);
+    background-image: linear-gradient(110deg, alpha(@accent, 0.10), alpha(@accent, 0.02));
 }
-#text { margin-left: 12px; color: @foreground; }
-#text:selected { color: @foreground; }
-#img { background: transparent; }
+#text { margin-left: 14px; color: @foreground; font-weight: 500; }
+#text:selected { color: @foreground; font-weight: 600; }
+#img {
+    padding: 3px;
+    border: 1px solid alpha(@foreground, 0.06);
+    border-radius: 10px;
+    background-color: alpha(@foreground, 0.045);
+}
+#img:selected {
+    border-color: alpha(@accent, 0.15);
+    background-color: alpha(@accent, 0.08);
+}

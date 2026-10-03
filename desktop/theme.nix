@@ -35,24 +35,24 @@ rec {
 
   # Shared material for GTK alpha masks, Qt surfaces and the compositor.
   glass = {
-    surfaceOpacity = 0.14;
+    surfaceOpacity = 0.22;
     # Lighting comes from the GPU material; GTK supplies only tint and silhouette.
     sheen = "none";
     compositor = {
       enabled = false;
       manage_window_blur = true;
       default_theme = "dark";
-      blur_strength = 0.6;
+      blur_strength = 0.8;
       blur_iterations = 1;
-      refraction_strength = 0.65;
-      chromatic_aberration = 0.18;
-      fresnel_strength = 0.55;
-      specular_strength = 0.70;
+      refraction_strength = 0.55;
+      chromatic_aberration = 0.10;
+      fresnel_strength = 0.40;
+      specular_strength = 0.48;
       glass_opacity = 1.0;
       edge_thickness = 0.12;
       # A light charcoal tint leaves the live refracted scene visible.
-      tint_color = "0x${colors.background}18";
-      lens_distortion = 0.12;
+      tint_color = "0x${colors.background}36";
+      lens_distortion = 0.06;
       brightness = 1.0;
       contrast = 1.0;
       saturation = 1.04;

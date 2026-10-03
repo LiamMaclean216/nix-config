@@ -1,0 +1,14 @@
+--- a/qt6/src/platformtheme/kiodelegate.cpp
++++ b/qt6/src/platformtheme/kiodelegate.cpp
+@@ -3,10 +3,8 @@
+ 
+ #include "kiodelegate.h"
+ 
+-#include "kioopenwith.h"
+-
+ KIOUiDelegate::KIOUiDelegate(KJobUiDelegate::Flags flags, QWidget *window)
+-    : KIO::JobUiDelegate(flags, window, {new KIOOpenWith(window, nullptr)})
++    : KIO::JobUiDelegate(flags, window)
+ {
+ }
+ 

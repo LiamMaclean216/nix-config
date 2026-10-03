@@ -1,11 +1,11 @@
 --- a/src/ShaderManager.hpp
 +++ b/src/ShaderManager.hpp
 @@ -45,6 +45,7 @@
- 
+
      SP<CShader>    glassShader = makeShared<CShader>();
      SGlassUniforms glassUniforms;
 +    void* liquidRenderer = nullptr;
- 
+
      SP<CShader>    blurShader = makeShared<CShader>();
      SBlurUniforms  blurUniforms;
 --- a/src/ShaderManager.cpp
@@ -15,30 +15,30 @@
  #include "Globals.hpp"
  #include "Shaders.hpp"
 +#include "liquid_glass.h"
- 
+
  #include <GLES3/gl32.h>
  #include <hyprland/src/helpers/Color.hpp>
 @@ -8,6 +9,8 @@
  #include <hyprland/src/render/OpenGL.hpp>
- 
+
  std::string CShaderManager::loadShaderSource(const char* fileName) {
 +    if (std::string_view(fileName) == "liquidglass.frag")
 +        return liquid_glass_shader();
      if (SHADERS.contains(fileName))
          return SHADERS.at(fileName);
- 
+
 @@ -29,6 +32,8 @@
      }
- 
+
      const auto program = glassShader->program();
 +    liquid_glass_destroy(liquidRenderer);
 +    liquidRenderer = liquid_glass_create(program);
- 
+
      glassUniforms.refractionStrength  = glGetUniformLocation(program, "refractionStrength");
      glassUniforms.chromaticAberration = glGetUniformLocation(program, "chromaticAberration");
 @@ -92,6 +97,8 @@
  }
- 
+
  void CShaderManager::destroy() noexcept {
 +    liquid_glass_destroy(liquidRenderer);
 +    liquidRenderer = nullptr;
@@ -52,13 +52,43 @@
  #include "BuiltInPresets.hpp"
  #include "Globals.hpp"
 +#include "liquid_glass.h"
- 
+
  #include <array>
  #include <GLES3/gl32.h>
-@@ -192,13 +193,15 @@
+@@ -90,6 +91,29 @@
+     glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1,
+                       dstX0, dstY0, dstX1, dstY1,
+                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
++
++    // Extend edge texels into missing off-monitor padding BEFORE blur. Cleared
++    // black padding otherwise bleeds into the bottom-right clock's valid scene.
++    auto extend = [](int x0, int y0, int x1, int y1, int dx0, int dy0, int dx1, int dy1) {
++        glBlitFramebuffer(x0, y0, x1, y1, dx0, dy0, dx1, dy1,
++                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
++    };
++    if (dstX0 > 0)
++        extend(srcX0, srcY0, srcX0 + 1, srcY1, 0, dstY0, dstX0, dstY1);
++    if (dstX1 < sampleWidth)
++        extend(srcX1 - 1, srcY0, srcX1, srcY1, dstX1, dstY0, sampleWidth, dstY1);
++    if (dstY0 > 0)
++        extend(srcX0, srcY0, srcX1, srcY0 + 1, dstX0, 0, dstX1, dstY0);
++    if (dstY1 < sampleHeight)
++        extend(srcX0, srcY1 - 1, srcX1, srcY1, dstX0, dstY1, dstX1, sampleHeight);
++    if (dstX0 > 0 && dstY0 > 0)
++        extend(srcX0, srcY0, srcX0 + 1, srcY0 + 1, 0, 0, dstX0, dstY0);
++    if (dstX0 > 0 && dstY1 < sampleHeight)
++        extend(srcX0, srcY1 - 1, srcX0 + 1, srcY1, 0, dstY1, dstX0, sampleHeight);
++    if (dstX1 < sampleWidth && dstY0 > 0)
++        extend(srcX1 - 1, srcY0, srcX1, srcY0 + 1, dstX1, 0, sampleWidth, dstY0);
++    if (dstX1 < sampleWidth && dstY1 < sampleHeight)
++        extend(srcX1 - 1, srcY1 - 1, srcX1, srcY1, dstX1, dstY1, sampleWidth, sampleHeight);
+ }
+
+ void blurBackground(SP<Render::IFramebuffer> sampleFramebuffer, float radius, int iterations,
+@@ -192,13 +216,16 @@
      shader->setUniformFloat2(SHADER_FULL_SIZE,
          static_cast<float>(fullSize.x), static_cast<float>(fullSize.y));
- 
+
 -    glUniform1f(uniforms.refractionStrength,  resolvePresetFloat(resolveContext, &SPresetValues::refractionStrength, &SOverridableConfig::refractionStrength));
 -    glUniform1f(uniforms.chromaticAberration, resolvePresetFloat(resolveContext, &SPresetValues::chromaticAberration, &SOverridableConfig::chromaticAberration));
 -    glUniform1f(uniforms.fresnelStrength,     resolvePresetFloat(resolveContext, &SPresetValues::fresnelStrength, &SOverridableConfig::fresnelStrength));
@@ -74,14 +104,15 @@
 +        resolvePresetFloat(resolveContext, &SPresetValues::glassOpacity, &SOverridableConfig::glassOpacity) * alpha,
 +        resolvePresetFloat(resolveContext, &SPresetValues::edgeThickness, &SOverridableConfig::edgeThickness),
 +        resolvePresetFloat(resolveContext, &SPresetValues::lensDistortion, &SOverridableConfig::lensDistortion),
++        alpha,
 +    };
- 
+
      uploadThemeUniforms(resolveContext);
- 
-@@ -241,9 +244,9 @@
+
+@@ -241,9 +268,9 @@
      shader->setUniformFloat(SHADER_RADIUS, cornerRadius);
      shader->setUniformFloat(SHADER_ROUNDING_POWER, roundingPower);
- 
+
 -    glBindVertexArray(shader->getUniformLocation(SHADER_SHADER_VAO));
      g_pHyprOpenGL->scissor(rawBox);
 -    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -89,15 +120,36 @@
 +                      shader->getUniformLocation(SHADER_SHADER_VAO));
      g_pHyprOpenGL->scissor(nullptr);
  }
- 
+
+--- a/src/GlassLayerSurface.cpp
++++ b/src/GlassLayerSurface.cpp
+@@ -1,4 +1,5 @@
+ #include "GlassLayerSurface.hpp"
++#include "liquid_glass.h"
+ #include "BuiltInPresets.hpp"
+ #include "GlassRenderer.hpp"
+ #include "Globals.hpp"
+@@ -316,7 +317,11 @@
+     const std::string preset   = resolvePresetName();
+     const SResolveContext ctx  = {preset, isDark, g_pGlobalState->config, g_pGlobalState->customPresets};
+
+-    float cornerRadius  = 0.0f;
++    // These two GTK cards now fill their layer bounds. Other layouts retain
++    // alpha-contour rendering (e.g. Wlogout's separate tiles).
++    float cornerRadius = (layerSurface->m_namespace == "wofi" ||
++                          (layerSurface->m_namespace == "waybar" && transformBox.w < 600.0f * monitor->m_scale))
++        ? LIQUID_GLASS_RADIUS * monitor->m_scale : 0.0f;
+     float roundingPower = 2.0f;
+
+     // Use the temp FBO's rendered alpha as a mask: glass only where the surface
 --- a/Makefile
 +++ b/Makefile
 @@ -23,7 +23,7 @@
- 
+
  $(TARGET): $(OBJ)
  	@echo "Linking $(TARGET)..."
 -	@$(CXX) $(LDFLAGS) $(OBJ) -o $@ $(LIBS)
 +	@$(CXX) $(LDFLAGS) $(OBJ) -o $@ $(LIBS) $(LIQUID_GLASS_LIB) -lGLESv2 -ldl -lpthread -lm
  	@echo "Done!"
- 
+
  clean:

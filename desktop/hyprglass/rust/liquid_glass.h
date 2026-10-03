@@ -4,9 +4,11 @@
 // Must match Rust's repr(C) Material. No C++ objects cross this boundary.
 struct LiquidGlassMaterial {
     float refraction, dispersion, fresnel, specular, opacity, edge, lens;
+    float layer_alpha;
 };
-static_assert(sizeof(LiquidGlassMaterial) == 28);
+static_assert(sizeof(LiquidGlassMaterial) == 32);
 static_assert(alignof(LiquidGlassMaterial) == 4);
+inline constexpr float LIQUID_GLASS_RADIUS = 28.0f;
 
 extern "C" {
 const char* liquid_glass_shader();

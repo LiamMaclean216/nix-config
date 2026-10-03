@@ -12,6 +12,7 @@ uniform float specularStrength, glassOpacity, edgeThickness, lensDistortion;
 uniform vec3 tintColor;
 uniform float tintAlpha, brightness, contrast, saturation, vibrancy;
 uniform float vibrancyDarkness, adaptiveDim, adaptiveBoost, maskAlphaThreshold;
+uniform float surfaceOpacity, layerAlpha;
 uniform int useMask, maskMode, regionRectCount;
 uniform vec4 regionRects[16];
 in vec2 v_texcoord;
@@ -46,19 +47,29 @@ bool inMaterial(vec2 uv) {
     return surfaceAt(uv).a >= max(maskAlphaThreshold, 0.0001);
 }
 
-// Local contour search, entirely on GPU. The alpha silhouette, rather than the
-// layer's bounding box, defines the lens (Waybar and Wlogout have empty regions).
-// Interior pixels need only 12 probes; binary refinement is confined to the rim.
-// Angular sampling approximates the distance field; no readback or capture loop.
+// Exact distance and gradient for the launcher and naturally sized clock layer.
+vec3 roundedContour(vec2 uv) {
+    vec2 p = (uv - 0.5) * fullSize;
+    float r = min(radius, min(fullSize.x, fullSize.y) * 0.5);
+    vec2 q = abs(p) - fullSize * 0.5 + r;
+    vec2 outside = max(q, 0.0);
+    float len = length(outside);
+    vec2 gradient = len > 0.0001 ? outside / len
+        : (q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+    return vec3(gradient * sign(p), len + min(max(q.x, q.y), 0.0) - r);
+}
+
+// Only irregular multi-card layers use contour sampling. More refinement and
+// angular samples reduce quantization; the main widgets take the cheap exact path.
 vec3 contour(vec2 uv, float reach) {
     float nearest = reach;
     vec2 normal = vec2(0.0);
-    for (int i = 0; i < 12; ++i) {
-        float angle = float(i) * 0.5235987756;
+    for (int i = 0; i < 24; ++i) {
+        float angle = float(i) * 0.2617993878;
         vec2 ray = vec2(cos(angle), sin(angle));
         if (inMaterial(uv + ray * reach / fullSize)) continue;
         float lo = 0.0, hi = reach;
-        for (int j = 0; j < 5; ++j) {
+        for (int j = 0; j < 8; ++j) {
             float mid = (lo + hi) * 0.5;
             if (inMaterial(uv + ray * mid / fullSize)) lo = mid;
             else hi = mid;
@@ -75,11 +86,7 @@ vec3 contour(vec2 uv, float reach) {
 vec3 scene(vec2 uv) {
     vec2 padded = uv * (1.0 - 2.0 * uvPadding) + uvPadding;
     vec2 halfTexel = 0.5 / vec2(textureSize(tex, 0));
-    // Sample inward at the bezel: do not pull cleared off-monitor padding into
-    // the bottom-right clock. Padding still supports the background blur kernel.
-    vec2 lower = max(uvPadding, halfTexel);
-    vec2 upper = min(1.0 - uvPadding, 1.0 - halfTexel);
-    return texture(tex, clamp(padded, lower, upper)).rgb;
+    return texture(tex, clamp(padded, halfTexel, 1.0 - halfTexel)).rgb;
 }
 
 vec2 refractedOffset(vec3 normal, float ior, float thickness) {
@@ -87,32 +94,46 @@ vec2 refractedOffset(vec3 normal, float ior, float thickness) {
     return ray.xy * thickness / max(-ray.z, 0.25) / fullSize;
 }
 
-// Fraunhofer slit envelope evaluated for red/green/blue wavelengths. This is
-// an artistic screen-space approximation of edge diffraction, not a wave solver.
+// A low-frequency spectral envelope: the old subpixel sin^2 fringe aliased.
+// Each band spans many pixels, keeping it stable at the native display scale.
 vec3 diffraction(float distance, float incidence) {
-    vec3 wavelength = vec3(0.650, 0.510, 0.475); // micrometres
-    vec3 phase = 3.14159265 * (distance + 0.3) * (0.8 + incidence) / wavelength;
-    vec3 amplitude = sin(phase) / phase;
-    return amplitude * amplitude;
+    vec3 frequency = vec3(0.32, 0.40, 0.46);
+    vec3 phase = distance * frequency + incidence * 1.5 + vec3(0.0, 2.1, 4.2);
+    return 0.5 + 0.5 * cos(phase);
 }
 
 void main() {
     vec2 uv = v_texcoord;
     vec4 surface = useMask == 1 ? surfaceAt(uv) : vec4(0.0);
-    if (!inMaterial(uv)) {
-        // Preserve anti-aliased GTK edges and content outside protocol regions.
+    bool analytic = useMask == 0 || radius > 0.0;
+    vec3 shape = roundedContour(uv);
+    // Derivatives are evaluated before any per-fragment early return.
+    float pixelWidth = max(fwidth(shape.z), 1.0);
+    float geometricCoverage = clamp(0.5 - shape.z / pixelWidth, 0.0, 1.0);
+    float groupFade = 1.0;
+    if (analytic && useMask == 1) {
+        // Empty border padding measures GTK's CSS opacity independently of the
+        // compositor fade. These locations avoid labels, glyphs and input wells.
+        float inset = min(8.0, min(fullSize.x, fullSize.y) * 0.18);
+        float base = min(surfaceAt(vec2(inset / fullSize.x, 0.5)).a,
+                         surfaceAt(vec2(1.0 - inset / fullSize.x, 0.5)).a);
+        groupFade = clamp(base / max(surfaceOpacity * layerAlpha, 0.0001), 0.0, 1.0);
+    }
+    float coverage = analytic ? geometricCoverage * groupFade
+        : clamp(surface.a / max(surfaceOpacity * layerAlpha, 0.0001), 0.0, 1.0);
+    if (coverage <= 0.0001 || (!analytic && maskMode == 1 && !inMaterial(uv))) {
         fragColor = surface;
         return;
     }
     float bevel = clamp(min(fullSize.x, fullSize.y) * edgeThickness, 4.0, 32.0);
-    vec3 edge = contour(uv, bevel);
+    vec3 edge = analytic ? vec3(shape.xy, max(-shape.z, 0.0)) : contour(uv, bevel);
     float rim = 1.0 - smoothstep(0.0, bevel, edge.z);
     // Convex glass slab: flat center, tilted surface normal at the curved edge.
-    float slope = rim * rim * 0.96;
+    float slope = rim * rim * 0.78;
     vec3 normal = normalize(vec3(edge.xy * slope, sqrt(max(1.0 - slope * slope, 0.01))));
-    float thickness = 48.0 * refractionStrength;
-    vec2 dome = (0.5 - uv) * lensDistortion * 0.025 * (1.0 - rim);
-    float spread = chromaticAberration * 0.25;
+    float thickness = bevel * 1.8 * refractionStrength;
+    vec2 dome = analytic ? (0.5 - uv) * lensDistortion * 0.018 * (1.0 - rim) : vec2(0.0);
+    float spread = chromaticAberration * 0.12;
     vec2 red = refractedOffset(normal, 1.50 - spread, thickness);
     vec2 green = refractedOffset(normal, 1.50, thickness);
     vec2 blue = refractedOffset(normal, 1.50 + spread, thickness);
@@ -136,20 +157,21 @@ void main() {
     vec3 light = normalize(vec3(-0.45, -0.65, 0.62));
     vec3 halfVector = normalize(light + vec3(0.0, 0.0, 1.0));
     float spec = pow(max(dot(normal, halfVector), 0.0), 44.0);
-    float lip = exp(-edge.z * 1.8);
+    float lip = exp(-pow(edge.z / 1.2, 2.0));
     float facing = dot(edge.xy, normalize(vec2(-0.45, -0.65))) * 0.5 + 0.5;
     color += fresnelStrength * fresnel * rim * vec3(0.80, 0.90, 1.0);
-    color += specularStrength * (spec * rim * 0.55 + lip * (0.10 + facing * 0.48));
-    color += diffraction(edge.z, facing) * chromaticAberration * rim * 1.8;
+    color += specularStrength * (spec * rim * 0.36 + lip * (0.06 + facing * 0.24));
+    color += diffraction(edge.z, facing) * chromaticAberration * rim * 0.12;
     // Weak caustic immediately inside the bevel, illuminated from upper left.
     color += vec3(1.0, 0.96, 0.88) * exp(-pow((edge.z - bevel * 0.68) / 1.5, 2.0))
              * facing * refractionStrength * 0.055;
     color *= 1.0 - rim * (1.0 - facing) * 0.09;
     color = clamp(color, 0.0, 1.0);
 
-    float coverage = useMask == 1 && maskMode == 0
-        ? smoothstep(0.0, max(maskAlphaThreshold * 2.0, 0.0002), surface.a) : 1.0;
-    float alpha = glassOpacity * coverage;
-    // Both inputs are premultiplied. Never distort or color-fringe foreground text.
-    fragColor = surface + vec4(color * alpha, alpha) * (1.0 - surface.a);
+    // The GTK surface already includes edge coverage and group opacity. Complete
+    // the pane's alpha once instead of putting another covered layer over it.
+    float materialOpacity = glassOpacity / max(layerAlpha, 0.0001);
+    float remaining = clamp(materialOpacity, 0.0, 1.0)
+        * max(coverage * layerAlpha - surface.a, 0.0);
+    fragColor = surface + vec4(color * remaining, remaining);
 }

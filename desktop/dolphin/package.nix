@@ -10,5 +10,6 @@ kdePackages.dolphin.overrideAttrs (old: {
     ./clean-navigation.patch
     ./stable-preview.patch
     ./stable-item-resize.patch
+    ./responsive-info-panel.patch
   ];
 })

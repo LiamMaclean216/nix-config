@@ -15,6 +15,7 @@ pub struct Material {
     pub opacity: f32,
     pub edge: f32,
     pub lens: f32,
+    pub layer_alpha: f32,
 }
 
 fn bounded(value: f32, fallback: f32, min: f32, max: f32) -> f32 {
@@ -45,6 +46,9 @@ extern "C" {
 
 struct Renderer {
     locations: [i32; 7],
+    surface_opacity_location: i32,
+    layer_alpha_location: i32,
+    surface_opacity: f32,
 }
 
 #[no_mangle]
@@ -62,7 +66,12 @@ pub unsafe extern "C" fn liquid_glass_create(program: u32) -> *mut c_void {
         b"specularStrength\0", b"glassOpacity\0", b"edgeThickness\0", b"lensDistortion\0",
     ];
     let locations = names.map(|name| glGetUniformLocation(program, name.as_ptr().cast()));
-    Box::into_raw(Box::new(Renderer { locations })).cast()
+    let surface_opacity_location = glGetUniformLocation(program, b"surfaceOpacity\0".as_ptr().cast());
+    let layer_alpha_location = glGetUniformLocation(program, b"layerAlpha\0".as_ptr().cast());
+    let surface_opacity = option_env!("LIQUID_GLASS_SURFACE_OPACITY")
+        .and_then(|value| value.parse::<f32>().ok()).unwrap_or(0.22);
+    Box::into_raw(Box::new(Renderer { locations, surface_opacity_location, layer_alpha_location,
+        surface_opacity: bounded(surface_opacity, 0.22, 0.01, 1.0) })).cast()
 }
 
 /// # Safety
@@ -85,6 +94,8 @@ pub unsafe extern "C" fn liquid_glass_draw(handle: *const c_void, material: *con
         return;
     }
     let renderer = &*handle.cast::<Renderer>();
+    glUniform1f(renderer.surface_opacity_location, renderer.surface_opacity);
+    glUniform1f(renderer.layer_alpha_location, bounded((*material).layer_alpha, 0.0, 0.0, 1.0));
     for (location, value) in renderer.locations.iter().zip((*material).uniforms()) {
         glUniform1f(*location, value);
     }
@@ -100,16 +111,16 @@ mod tests {
     fn material_rejects_non_finite_and_out_of_range_config() {
         let material = Material { refraction: f32::NAN, dispersion: 9.0,
             fresnel: -1.0, specular: f32::INFINITY, opacity: f32::NAN,
-            edge: 0.0, lens: -9.0 };
+            edge: 0.0, lens: -9.0, layer_alpha: 1.0 };
         assert_eq!(material.uniforms(), [0.65, 1.0, 0.0, 0.7, 0.0, 0.01, 0.0]);
     }
 
     #[test]
     fn fade_alpha_and_disabled_optics_survive_validation() {
         let material = Material { refraction: 0.0, dispersion: 0.0, fresnel: 0.0,
-            specular: 0.0, opacity: 0.25, edge: 0.12, lens: 0.0 };
+            specular: 0.0, opacity: 0.25, edge: 0.12, lens: 0.0, layer_alpha: 1.0 };
         assert_eq!(material.uniforms(), [0.0, 0.0, 0.0, 0.0, 0.25, 0.12, 0.0]);
-        assert_eq!(std::mem::size_of::<Material>(), 28);
+        assert_eq!(std::mem::size_of::<Material>(), 32);
         assert_eq!(std::mem::align_of::<Material>(), 4);
     }
 
