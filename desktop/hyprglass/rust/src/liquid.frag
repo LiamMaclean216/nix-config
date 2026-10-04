@@ -152,19 +152,16 @@ void main() {
                 1.0 + vibrancy * chroma * (1.0 - vibrancyDarkness * (1.0 - luminance)));
     color = mix(color, tintColor, clamp(tintAlpha, 0.0, 1.0));
 
-    // Schlick Fresnel plus broad studio reflection and a narrow polished lip.
+    // Keep reflections at the boundary. Scaling a narrow specular/caustic lobe
+    // with bevel depth produced separate bright stripes inside large panes.
     float fresnel = 0.04 + 0.96 * pow(1.0 - normal.z, 5.0);
-    vec3 light = normalize(vec3(-0.45, -0.65, 0.62));
-    vec3 halfVector = normalize(light + vec3(0.0, 0.0, 1.0));
-    float spec = pow(max(dot(normal, halfVector), 0.0), 44.0);
-    float lip = exp(-pow(edge.z / 1.2, 2.0));
     float facing = dot(edge.xy, normalize(vec2(-0.45, -0.65))) * 0.5 + 0.5;
+    float illumination = smoothstep(0.05, 0.95, facing);
+    float lip = 1.0 - smoothstep(0.0, max(1.6, pixelWidth), edge.z);
+    float reflection = 1.0 - smoothstep(0.0, 7.0, edge.z);
     color += fresnelStrength * fresnel * rim * vec3(0.80, 0.90, 1.0);
-    color += specularStrength * (spec * rim * 0.36 + lip * (0.06 + facing * 0.24));
+    color += specularStrength * illumination * (lip * 0.10 + reflection * 0.035);
     color += diffraction(edge.z, facing) * chromaticAberration * rim * 0.12;
-    // Weak caustic immediately inside the bevel, illuminated from upper left.
-    color += vec3(1.0, 0.96, 0.88) * exp(-pow((edge.z - bevel * 0.68) / 1.5, 2.0))
-             * facing * refractionStrength * 0.055;
     color *= 1.0 - rim * (1.0 - facing) * 0.09;
     color = clamp(color, 0.0, 1.0);
 

@@ -3,8 +3,9 @@
 An original Rust-driven GLES 3 optical material for Wofi, the bottom-right Waybar
 clock, dictation and Wlogout. `rust/src/liquid.frag` refracts the live compositor
 backdrop using a convex slab normal and Snell's law, with different refractive
-indices for red, green and blue. Schlick Fresnel, directional reflections, a
-polished lip and a small caustic give the edges thickness. A restrained, smooth
+indices for red, green and blue. Schlick Fresnel, a soft directional reflection and a restrained polished lip
+give the edges thickness. The reflection stays within seven framebuffer pixels
+of the boundary instead of forming bright bands inside larger panes. A restrained, smooth
 spectral rim avoids unfiltered subpixel diffraction bands. This is an Apple-inspired
 screen-space material, not Apple's proprietary renderer or a full wave simulation.
 
@@ -47,7 +48,10 @@ Tune `../theme.nix`, under `glass.compositor`:
 
 GTK's `surfaceOpacity` supplies the silhouette and a charcoal tint (now 22%). Its
 CSS sheen is disabled because lighting comes from the shader. Live resampling is
-damage-driven and capped at 60 fps. Optical rendering is tested on the real GPU
+damage-driven and follows the monitor's rendered frames while the backdrop changes.
+Window geometry, visibility, stacking and fades invalidate overlapping panes
+before compositor damage is collected, independently of window glass. Idle
+panes keep their cached blur; there is no forced repaint loop. Optical rendering is tested on the real GPU
 using an isolated EGL device context; this leaves the desktop and focus alone.
 The timing covers the material pass, excluding compositor capture, blur and
 client rendering. Overall GPU utilization includes unrelated applications.
@@ -61,7 +65,8 @@ nix build path:.#hyprglass --no-link -L
 The derivation runs Rust material/FFI tests, GLSL validation, and a surfaceless
 Mesa GLES test of the actual Rust draw pass. Pixel assertions cover transparent
 corners and empty bar regions, supersampled silhouette coverage, unchanged opaque
-text, displacement, dispersion, premultiplied fades, zero opacity, and immediate scene updates. Mesa is used only
+text, displacement, dispersion, premultiplied fades, zero opacity, immediate scene updates, and a size-independent reflected edge
+without interior highlight bands. Mesa is used only
 for deterministic build tests; the desktop uses Hyprland's current GPU context.
 
 `rust/tests/render.py` accepts `--artifacts DIR --label after` to save overview
@@ -90,8 +95,13 @@ Apply the Home Manager configuration with:
 nix run .#home-manager -- switch --flake path:.#liam
 ```
 
-Log out and back in to load the rebuilt plugin; changing its path while the old
-plugin is loaded is not a reliable replacement. If your running compositor is
-older than the pinned Hyprland, apply the NixOS build before logging back in.
-Afterward check `hyprctl plugin list` and `hyprctl configerrors`. Home Manager
-generations retain the old plugin and theme for rollback.
+On the pinned Hyprland 0.56.2, `hyprctl reload` replaces a changed configured
+plugin path by unloading the previous library before loading the new one. This
+replacement was tested with an existing mapped clock and a static window moved
+behind it: the glass updated, the old library was unmapped, and idle or unrelated
+movement caused no new backdrop captures.
+
+If changing the compositor version, apply the matching NixOS build and log out
+and back in so its private ABI matches the plugin. Afterward check
+`hyprctl plugin list` and `hyprctl configerrors`. Home Manager generations retain
+the old plugin and theme for rollback.

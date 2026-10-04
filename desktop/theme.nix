@@ -66,7 +66,10 @@ rec {
         mask_mode = "alpha";
         namespace_mask_thresholds = "wofi=0.05, voice-input=0.05, logout_dialog=0.05, waybar=0.05";
         live_resample = true;
-        live_resample_fps = 60;
+        # Follow damaged compositor frames, including this monitor's 240 Hz.
+        # An idle pane still reuses its cached backdrop.
+        live_resample_fps = 0;
+        force_live_resample = false;
         manage_blur = true;
       };
     };

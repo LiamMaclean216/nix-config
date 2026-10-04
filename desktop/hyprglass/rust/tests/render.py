@@ -279,6 +279,31 @@ def regression_checks():
     check(render(opacity=0, layer_alpha=0) == bytes(width * height * 4), "Glass remained after compositor faded to zero")
 
 
+def reflection_checks():
+    """Isolate the reflected light from refraction on a uniform backdrop.
+
+    Large panes must not introduce another bright line inside the bevel, and
+    changing pane size must not move the reflection farther into its content.
+    """
+    profiles = {}
+    for name, width, height in (("clock", 179, 40), ("launcher", 620, 460), ("large", 900, 680)):
+        background = bytes((64, 64, 64, 255)) * (width * height)
+        setup(width, height, background, bytes(width * height * 4), mask_enabled=False, radius=28)
+        plain = render(refraction=0, dispersion=0, fresnel=0, specular=0)
+        lit = render(refraction=0, dispersion=0, fresnel=0, specular=.48)
+        profile = [pixel(lit, width // 2, depth)[0] - pixel(plain, width // 2, depth)[0]
+                   for depth in range(min(32, height // 2))]
+        profiles[name] = profile
+        check(0 < max(profile) < 28, f"{name}: boundary reflection is missing or excessively bright")
+        check(all(b <= a + 1 for a, b in zip(profile, profile[1:])),
+              f"{name}: reflection forms a second bright band inside the pane")
+        check(max(profile[10:], default=0) <= 1, f"{name}: reflection extends into the content")
+    for depth in range(10):
+        values = [p[depth] for p in profiles.values()]
+        check(max(values) - min(values) <= 1, "Pane size changes the reflected-edge profile")
+    metrics["reflection_profiles_rgb8"] = profiles
+
+
 # A small vector-like bitmap font with fractional rectangle edges. Rendering text
 # to the mask exercises foreground compositing without platform font dependencies.
 FONT = {
@@ -527,6 +552,7 @@ def visual_artifacts():
 
 
 regression_checks()
+reflection_checks()
 if args.artifacts:
     visual_artifacts()
 if args.benchmark:

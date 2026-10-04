@@ -1,0 +1,279 @@
+--- /dev/null
++++ b/src/SceneDamage.hpp
+@@ -0,0 +1,80 @@
++#pragma once
++
++#include <algorithm>
++#include <cstddef>
++#include <cstdint>
++#include <vector>
++#include <unordered_map>
++
++// Geometry-only scene state: client commits are handled separately by damageSurface.
++// Keeping this independent of decorations also covers disabled window glass,
++// undecorated clients and windows leaving a monitor's visible scene.
++namespace GlassScene {
++struct Box {
++    double x, y, w, h;
++    bool operator==(const Box&) const = default;
++
++    bool overlaps(const Box& other) const {
++        return w > 0 && h > 0 && other.w > 0 && other.h > 0 &&
++               x < other.x + other.w && x + w > other.x &&
++               y < other.y + other.h && y + h > other.y;
++    }
++};
++
++struct Window {
++    uintptr_t identity;
++    Box box;
++    Box bounds;
++    float opacity;
++    unsigned plane;
++    size_t order;
++    bool operator==(const Window&) const = default;
++};
++using Snapshot = std::vector<Window>;
++
++// Keep old/new bounds separate: a window crossing a distant glass panel must
++// not dirty that panel just because it lies inside the bounds of the whole move.
++inline std::vector<Box> changedBounds(const Snapshot& previous, const Snapshot& current) {
++    std::unordered_map<uintptr_t, const Window*> oldById, nowById;
++    for (const auto& window : previous)
++        oldById.emplace(window.identity, &window);
++    for (const auto& window : current)
++        nowById.emplace(window.identity, &window);
++
++    std::vector<Box> damage;
++    for (const auto& old : previous) {
++        const auto it = nowById.find(old.identity);
++        if (it == nowById.end()) {
++            damage.push_back(old.bounds);
++        } else {
++            const auto& now = *it->second;
++            if (now.box != old.box || now.bounds != old.bounds || now.opacity != old.opacity || now.plane != old.plane)
++                damage.insert(damage.end(), {old.bounds, now.bounds});
++        }
++    }
++    for (const auto& now : current) {
++        if (!oldById.contains(now.identity))
++            damage.push_back(now.bounds);
++    }
++
++    // Absolute ranks shift when unrelated windows enter/leave a monitor. Only
++    // changed relative order between surviving windows changes their stacking.
++    for (size_t a = 0; a < previous.size(); ++a) {
++        const auto nowA = nowById.find(previous[a].identity);
++        if (nowA == nowById.end())
++            continue;
++        for (size_t b = a + 1; b < previous.size(); ++b) {
++            const auto nowB = nowById.find(previous[b].identity);
++            if (nowB == nowById.end() || previous[a].plane != previous[b].plane || nowA->second->plane != nowB->second->plane)
++                continue;
++            if ((previous[a].order < previous[b].order) != (nowA->second->order < nowB->second->order))
++                damage.insert(damage.end(), {previous[a].bounds, previous[b].bounds, nowA->second->bounds, nowB->second->bounds});
++        }
++    }
++    return damage;
++}
++
++inline bool affectsSample(const std::vector<Box>& damage, const Box& sample) {
++    return std::ranges::any_of(damage, [&](const Box& box) { return box.overlaps(sample); });
++}
++} // namespace GlassScene
+--- a/src/Globals.hpp
++++ b/src/Globals.hpp
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "GlassLayerSurface.hpp"
++#include "SceneDamage.hpp"
+ #include "PluginConfig.hpp"
+ #include "ShaderManager.hpp"
+ 
+@@ -70,6 +71,9 @@
+             sceneGeneration[mon->m_id]++;
+     }
+ 
++    // Last visible geometry at render.pre, independently of window glass.
++    std::unordered_map<MONITORID, GlassScene::Snapshot> layerSceneSnapshots;
++
+     // renderLayer hook
+     CFunctionHook* renderLayerHook = nullptr;
+     // damageSurface hook (live layer re-render)
+--- a/src/GlassLayerSurface.hpp
++++ b/src/GlassLayerSurface.hpp
+@@ -24,7 +24,7 @@
+     void damageIfMoved();
+ 
+     // Content below committed damage in our sample region — resample next frame
+-    void markBackgroundDirty();
++    void markBackgroundDirty(bool geometryChange = false);
+ 
+     [[nodiscard]] bool liveResampleEnabled() const;
+ 
+--- a/src/GlassLayerSurface.cpp
++++ b/src/GlassLayerSurface.cpp
+@@ -169,14 +169,16 @@
+         g_pHyprRenderer->damageBox(box);
+ }
+ 
+-void CGlassLayerSurface::markBackgroundDirty() {
++void CGlassLayerSurface::markBackgroundDirty(bool geometryChange) {
+     if (m_backgroundDirty)
+         return;
+ 
+     const auto& config = g_pGlobalState->config;
+     const int64_t fps = config.layersLiveResampleFps ? **config.layersLiveResampleFps : 0;
+     const auto now = std::chrono::steady_clock::now();
+-    if (fps > 0 && now - m_lastDirtyMark < std::chrono::nanoseconds(1'000'000'000 / fps))
++    // Compositor geometry follows the monitor frame rate, independently of the
++    // optional cap for client commits. Do not lose the final move/resize frame.
++    if (!geometryChange && fps > 0 && now - m_lastDirtyMark < std::chrono::nanoseconds(1'000'000'000 / fps))
+         return;
+     m_lastDirtyMark = now;
+ 
+--- a/src/GlassDecoration.cpp
++++ b/src/GlassDecoration.cpp
+@@ -167,13 +167,6 @@
+             m_lastPosition = currentPosition;
+             m_lastSize = currentSize;
+         }
+-
+-        // Bump layer cache only for actual scene changes (window moved/animating),
+-        // NOT from damageEntire() which fires in the damage system feedback path.
+-        if (moved || wsAnimating) {
+-            if (auto mon = window->m_monitor.lock())
+-                g_pGlobalState->bumpSceneGeneration(mon);
+-        }
+     }
+ }
+ 
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -5,9 +5,13 @@
+ #include "GlassRenderer.hpp"
+ #include "Globals.hpp"
+ #include "PluginConfig.hpp"
++#include "LayerGeometry.hpp"
++#include "WindowGeometry.hpp"
+ 
+ #include <hyprland/src/Compositor.hpp>
+ #include <hyprland/src/desktop/view/LayerSurface.hpp>
++#include <hyprland/src/desktop/state/ViewState.hpp>
++#include <hyprland/src/desktop/state/FadingOutState.hpp>
+ #include <hyprland/src/desktop/view/WLSurface.hpp>
+ #include <hyprland/src/helpers/time/Time.hpp>
+ #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
+@@ -18,6 +22,7 @@
+ #include <hyprland/src/debug/log/Logger.hpp>
+ #include <hyprland/src/event/EventBus.hpp>
+ 
++#include <cmath>
+ #include <cstdlib>
+ #include <optional>
+ #include <sstream>
+@@ -160,6 +165,89 @@
+ 
+         if (sampleBox.overlaps(damagedBox))
+             state->markBackgroundDirty();
++    }
++}
++
++// Run after animation advancement and before beginRender collects damage. Moving
++// a static client submits no surface damage, and window decorations may be disabled.
++static void updateLayerScene(PHLMONITOR monitor) {
++    if (!g_pGlobalState || !monitor)
++        return;
++
++    const auto& config = g_pGlobalState->config;
++    if (!config.layersEnabled || !**config.layersEnabled)
++        return;
++
++    const auto wantsLiveScene = [&](const auto& pair) {
++        const auto layer = pair.second->getLayerSurface();
++        return layer && layer->m_mapped && layer->m_monitor == monitor && pair.second->liveResampleEnabled();
++    };
++    if (std::ranges::none_of(g_pGlobalState->layerSurfaces, wantsLiveScene)) {
++        g_pGlobalState->layerSceneSnapshots.erase(monitor->m_id);
++        return;
++    }
++
++    GlassScene::Snapshot current;
++    for (const auto& window : Desktop::viewState()->windows()) {
++        if (!window || !window->m_isMapped || window->isHidden() ||
++            !g_pHyprRenderer->shouldRenderWindow(window, monitor))
++            continue;
++
++        const auto box = WindowGeometry::computeWindowBox(window, monitor);
++        if (!box || !std::isfinite(box->x) || !std::isfinite(box->y) ||
++            !std::isfinite(box->w) || !std::isfinite(box->h))
++            continue;
++
++        // Keep main geometry distinct from dependency bounds: dimAround's
++        // monitor-wide bounds stay fixed while the window body moves. Decoration
++        // extents also cover shadows, borders and client popups behind the glass.
++        auto bounds = *box;
++        bounds.addExtents(window->getFullWindowExtents() * monitor->m_scale).round();
++
++        float opacity = window->effectiveAlpha();
++        if (const auto workspace = window->m_workspace; workspace && !window->m_pinned)
++            opacity *= workspace->m_alpha->value();
++        const unsigned plane = (window->m_isFloating ? 1U : 0U) |
++                               (window->m_pinned ? 2U : 0U) | (window->onSpecialWorkspace() ? 4U : 0U);
++        current.push_back({reinterpret_cast<uintptr_t>(window.get()),
++                           {box->x, box->y, box->w, box->h},
++                           {bounds.x, bounds.y, bounds.w, bounds.h}, opacity, plane, current.size()});
++    }
++
++    // Closed clients continue rendering as animated snapshots. Follow their
++    // geometry/alpha too, until the last snapshot leaves the visible scene.
++    for (const auto& fade : Desktop::fadingOutState()->fadeouts()) {
++        if (!fade || fade->monitor() != monitor || fade->done() ||
++            (fade->plane() != Desktop::FADEOUT_PLANE_WINDOW_TILED &&
++             fade->plane() != Desktop::FADEOUT_PLANE_WINDOW_FLOATING &&
++             fade->plane() != Desktop::FADEOUT_PLANE_WINDOW_OVER_FULLSCREEN))
++            continue;
++        if (const auto workspace = fade->workspace().lock(); workspace && !workspace->isVisible())
++            continue;
++        auto box = fade->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
++        box.translate(-monitor->m_position).scale(monitor->m_scale).round();
++        current.push_back({reinterpret_cast<uintptr_t>(fade.get()),
++                           {box.x, box.y, box.w, box.h},
++                           {box.x, box.y, box.w, box.h}, fade->alpha(),
++                           8U + static_cast<unsigned>(fade->plane()), static_cast<size_t>(fade->zIndex())});
++    }
++
++    auto& previous = g_pGlobalState->layerSceneSnapshots[monitor->m_id];
++    const auto damage = GlassScene::changedBounds(previous, current);
++    previous = std::move(current);
++    if (damage.empty())
++        return;
++
++    for (const auto& pair : g_pGlobalState->layerSurfaces) {
++        if (!wantsLiveScene(pair))
++            continue;
++        const auto box = LayerGeometry::computeLayerBox(pair.second->getLayerSurface(), monitor);
++        if (!box)
++            continue;
++        auto sample = *box;
++        sample.expand(GlassRenderer::SAMPLE_PADDING_PX);
++        if (GlassScene::affectsSample(damage, {sample.x, sample.y, sample.w, sample.h}))
++            pair.second->markBackgroundDirty(true);
+     }
+ }
+ 
+@@ -409,6 +497,13 @@
+     g_pGlobalState->listeners.push_back(Event::bus()->m_events.window.close.listen([&](PHLWINDOW w) { onCloseWindow(w); }));
+ 
+     g_pGlobalState->listeners.push_back(Event::bus()->m_events.layer.closed.listen([&](PHLLS layerSurface) { clearLayerGlassOnClose(layerSurface); }));
++
++    g_pGlobalState->listeners.push_back(Event::bus()->m_events.render.pre.listen(updateLayerScene));
++    g_pGlobalState->listeners.push_back(Event::bus()->m_events.monitor.destroyMon.listen(
++        [](PHLMONITOR monitor) {
++            if (g_pGlobalState && monitor)
++                g_pGlobalState->layerSceneSnapshots.erase(monitor->m_id);
++        }));
+ 
+     // Z-order / visibility changes invalidate layer glass caches on the affected monitor only.
+     // Per-monitor to avoid triggering re-samples on idle monitors (feedback loop).
