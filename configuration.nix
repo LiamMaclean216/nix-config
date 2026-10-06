@@ -191,12 +191,14 @@ in
             "bluez5.enable-sbc-xq" = true;
             "bluez5.enable-hw-volume" = true;
             "bluez5.dummy-avrcp-player" = true;
-            # Playback only: do not expose headset/microphone profiles that
-            # reduce AirPods playback quality when an application records.
-            "bluez5.hfphsp-backend" = "none";
+            # Native HFP negotiates the best supported call codec (including
+            # LC3-SWB); retain A2DP for stereo playback outside calls.
+            "bluez5.hfphsp-backend" = "native";
+            "bluez5.enable-msbc" = true;
             "bluez5.roles" = [
               "a2dp_sink"
               "a2dp_source"
+              "hfp_ag"
             ];
           };
           "monitor.bluez.rules" = [
@@ -210,6 +212,7 @@ in
                 "update-props" = {
                   "bluez5.auto-connect" = [
                     "a2dp_sink"
+                    "hfp_hf"
                   ];
                 };
               };
@@ -218,8 +221,8 @@ in
         };
         "11-bluetooth-policy" = {
           "wireplumber.settings" = {
-            # Recording uses a separate microphone; keep AirPods on A2DP.
-            "bluetooth.autoswitch-to-headset-profile" = false;
+            # Enable the earbuds' mic during calls, then restore stereo audio.
+            "bluetooth.autoswitch-to-headset-profile" = true;
             "device.restore-profile" = false;
           };
         };

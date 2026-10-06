@@ -131,6 +131,7 @@ function M.confirm_remove(worktree, callback)
 		"Remove this worktree?", "", worktree.path, "",
 		worktree.branch and ("Keep local branch: " .. worktree.branch)
 			or "Detached commits will be saved to a local branch.",
+		"Stop and dismiss all Codex sessions in this worktree.",
 		"", "  [ Cancel ]    Delete worktree",
 	}
 	if worktree.docker then

@@ -247,7 +247,7 @@ local function set_window_options(win, sidebar)
 	vim.wo[win].colorcolumn = ""
 	vim.wo[win].winbar = ""
 	if sidebar then
-		vim.wo[win].statusline = "  [/] filter  [[]/[]] tab  [Tab] toggle  [j/k] move  [Enter/i] open  [d] toggle  [D] dismiss all  [q] back"
+		vim.wo[win].statusline = "  [/] filter  [[]/[]] tab  [Tab] toggle  [j/k] move  [Enter/i] open  [d] toggle  [q] back"
 	else
 		vim.wo[win].statusline = "  [Esc] recents  [Alt-Esc] send Escape to Codex  [Ctrl-C] new  [F10] recents"
 	end
@@ -525,11 +525,11 @@ render_sidebar = function()
 			active_hl, #state.active_order, dismissed_hl
 		)
 		vim.wo[state.sidebar_win].statusline = state.recents_tab == "active"
-			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [r] resync  [f] fork  [d] dismiss  [D] dismiss all  [q] back"
+			and "  [/] filter  []] dismissed  [Tab] toggle  [j/k] move  [Enter/i] open  [r] resync  [f] fork  [d] dismiss  [q] back"
 			or "  [/] filter  [[] active  [Tab] toggle  [j/k] move  [Enter] restore/open  [i] preview  [r] resync  [f] fork  [d] restore  [q] back"
 		if state.sidebar_level == "worktrees" then
 			vim.wo[state.sidebar_win].statusline = "  [j/k] worktrees  [Enter] select"
-				.. (docker and "  [h/l] action" or "") .. "  [a] rename  [d] remove worktree  [/] filter  [Tab] active/dismissed  [r] resync  [q] back"
+				.. (docker and "  [h/l] action  [d] Docker down" or "") .. "  [a] rename  [D] remove worktree  [/] filter  [Tab] active/dismissed  [r] resync  [q] back"
 		else
 			vim.wo[state.sidebar_win].statusline = "  [Esc] worktrees" .. vim.wo[state.sidebar_win].statusline
 		end
@@ -715,10 +715,11 @@ render_sidebar = function()
 		"  [Tab/[/]] switch recents tab",
 		"  [/] filter  [Esc] clear filter",
 		state.recents_tab == "active" and "  [Enter/i/I] open chat" or "  [Enter] restore and open chat",
-		state.sidebar_level == "worktrees" and "  [d] remove worktree (keep branch)"
-			or (state.recents_tab == "active" and "  [d] dismiss  [D] dismiss all" or "  [i/I] preview  [d] restore"),
+		state.sidebar_level == "worktrees" and "  [D] remove worktree (keep branch)"
+			or (state.recents_tab == "active" and "  [d] dismiss" or "  [i/I] preview  [d] restore"),
+		state.sidebar_level == "worktrees" and docker and "  [d] Docker down" or "",
 		state.sidebar_level == "worktrees" and "  [a] rename worktree / branch" or "",
-		state.recents_tab == "active" and "  Working: d/D toggle dismiss queue" or "",
+		state.sidebar_level == "runs" and state.recents_tab == "active" and "  Working: d toggles dismiss queue" or "",
 		"  [f] fork and focus chat",
 		"  [q] back",
 	}
@@ -1696,6 +1697,7 @@ end
 local function preload_active_threads()
 	local limit = state.opts.preload_concurrency or 0
 	if state.shutting_down or not state.backend_ready or not valid_win(state.chat_win)
+		or (state.project and state.project.removing_worktree)
 		or state.recents_tab ~= "active" or limit <= 0
 	then
 		return
@@ -2068,7 +2070,7 @@ local function start_backend()
 end
 
 refresh_threads = function()
-	if state.shutting_down or state.refreshing or not state.project then
+	if state.shutting_down or state.refreshing or not state.project or state.project.removing_worktree then
 		return
 	end
 	if not state.backend_ready then
@@ -2088,7 +2090,7 @@ refresh_threads = function()
 			return
 		end
 		state.refreshing = false
-		if state.shutting_down then
+		if state.shutting_down or (state.project and state.project.removing_worktree) then
 			return
 		end
 		if not err and not request_uses_state_db then
@@ -2583,6 +2585,16 @@ end
 
 local function move_selection(delta)
 	local groups, group = Sidebar.groups(state)
+	local order = group and group.threads or {}
+	local index = 1
+	for i, thread in ipairs(order) do if thread.id == state.selected_id then index = i end end
+	-- Stepping beyond the runs returns to browsing worktree headers. Keep
+	-- gg/G scoped to the current list, since they jump rather than step.
+	if state.sidebar_level == "runs" and (delta == -1 or delta == 1)
+		and (#order == 0 or index + delta < 1 or index + delta > #order)
+	then
+		state.sidebar_level = "worktrees"
+	end
 	if state.sidebar_level == "worktrees" then
 		local index = 1
 		for i, item in ipairs(groups) do if item == group then index = i end end
@@ -2592,10 +2604,7 @@ local function move_selection(delta)
 		render_sidebar()
 		return
 	end
-	local order = group and group.threads or {}
 	if #order == 0 then return end
-	local index = 1
-	for i, thread in ipairs(order) do if thread.id == state.selected_id then index = i end end
 	index = math.max(1, math.min(#order, index + delta))
 	if state.selected_id == order[index].id then return end
 	state.selected_id = order[index].id
@@ -2931,21 +2940,6 @@ local function fork_selected()
 		end
 		M.open_selected(true)
 	end)
-end
-
-local function dismiss_all()
-	if state.recents_tab ~= "active" then
-		return
-	end
-	local threads = vim.list_slice(state.active_order)
-	local dismissed = false
-	for _, thread in ipairs(threads) do
-		dismiss_thread(thread, true)
-		dismissed = dismissed or thread._dismissed == true
-	end
-	if dismissed then
-		open_new_chat()
-	end
 end
 
 local function search_recents(search)
@@ -3309,7 +3303,71 @@ function M.toggle_worktree()
 	update_composer_frame()
 end
 
+local function close_worktree_sessions(project, worktree, callback)
+	local backend = state.backend
+	if not backend then callback("The recents backend is not ready"); return end
+	local function belongs(cwd)
+		local tree = Project.worktree_for(project, cwd)
+		return tree and tree.path == worktree.path
+	end
+	local function current()
+		return state.project == project and state.backend == backend and not state.shutting_down
+	end
+	local sessions = {}
+	for _, session in pairs(state.sessions) do
+		if belongs(session.cwd) then table.insert(sessions, session) end
+	end
+	-- Close terminals first, including new chats without a canonical ID. The
+	-- daemon keeps their turns alive, so list persisted threads after exit and
+	-- interrupt them explicitly before archiving and removing the checkout.
+	local function close_next(index)
+		if not current() then callback("The project changed"); return end
+		local session = sessions[index]
+		if session then
+			close_session(session, function(err)
+				if err then callback(err); return end
+				if not current() then callback("The project changed"); return end
+				if not session.id then
+					state.threads[session.key] = nil
+					state.dismissed_threads[session.key] = nil
+					state.dismiss_pending[session.key] = nil
+					if state.active_id == session.key then state.active_id = nil end
+				end
+				close_next(index + 1)
+			end)
+			return
+		end
+		backend:list_threads({ archived = false }, function(err, threads)
+			if err then callback(err); return end
+			if not current() then callback("The project changed"); return end
+			local targets = vim.tbl_filter(function(thread) return belongs(thread.cwd) end, threads)
+			local function archive_next(position)
+				if not current() then callback("The project changed"); return end
+				local thread = targets[position]
+				if not thread then callback(); return end
+				state.dismiss_pending[thread.id] = true
+				local function finish(archive_err)
+					state.dismiss_pending[thread.id] = nil
+					if archive_err then callback(archive_err); return end
+					if not current() then callback("The project changed"); return end
+					thread._dismiss_queued = nil
+					move_to_dismissed(thread, true)
+					archive_next(position + 1)
+				end
+				backend:interrupt_thread(thread.id, function(interrupt_err)
+					if interrupt_err then finish(interrupt_err); return end
+					if not current() then finish("The project changed"); return end
+					backend:archive_thread(thread.id, finish)
+				end)
+			end
+			archive_next(1)
+		end)
+	end
+	close_next(1)
+end
+
 local function remove_selected_worktree()
+	if state.sidebar_level ~= "worktrees" then return end
 	local project = state.project
 	local _, group = Sidebar.groups(state)
 	if not project or not project.common_dir or not group or project.removing_worktree or project.renaming_worktree then return end
@@ -3320,21 +3378,9 @@ local function remove_selected_worktree()
 		notify("The main worktree cannot be removed", vim.log.levels.WARN)
 		return
 	end
-	local function busy()
-		for _, thread in pairs(state.threads) do
-			local tree = Project.worktree_for(project, thread.cwd)
-			local status = status_name(thread)
-			if tree and tree.path == worktree.path and (status == "working" or status == "approval" or status == "input") then
-				notify("Stop the active runs in this worktree before removing it", vim.log.levels.WARN)
-				return true
-			end
-		end
-		return false
-	end
-	if busy() then return end
 	project.removing_worktree = worktree.path
 	Sidebar.confirm_remove(worktree, function(confirmed)
-		if not confirmed or state.project ~= project or state.shutting_down or busy() then
+		if not confirmed or state.project ~= project or state.shutting_down then
 			project.removing_worktree = nil
 			return
 		end
@@ -3344,10 +3390,6 @@ local function remove_selected_worktree()
 			notify("Removed worktree. Local branch kept: " .. branch)
 			if state.project ~= project or state.shutting_down then return end
 			project.worktree_revision = (project.worktree_revision or 0) + 1
-			for _, session in pairs(state.sessions) do
-				local tree = Project.worktree_for(project, session.cwd)
-				if tree and tree.path == worktree.path then close_session(session, function() end) end
-			end
 			local target = current_target()
 			project.worktrees = vim.tbl_filter(function(tree) return tree.path ~= worktree.path end, project.worktrees)
 			local fallback = project.worktrees[1]
@@ -3361,9 +3403,16 @@ local function remove_selected_worktree()
 			sort_threads()
 			render_sidebar()
 			refresh_project_state()
-		end, worktree.docker and function(done)
-			Docker.destroy(worktree.path, docker_cache, render_sidebar, done)
-		end or nil)
+		end, function(done)
+			close_worktree_sessions(project, worktree, function(err)
+				if err then done(err); return end
+				if worktree.docker then
+					Docker.destroy(worktree.path, docker_cache, render_sidebar, done)
+				else
+					done()
+				end
+			end)
+		end)
 	end)
 end
 
@@ -3430,9 +3479,16 @@ local function sidebar_mappings()
 		cycle_recents_tab(1)
 	end, vim.tbl_extend("force", options, { desc = "Show next Agent Mode recents tab" }))
 	vim.keymap.set("n", "d", function()
-		if state.sidebar_level == "worktrees" then remove_selected_worktree() else toggle_dismissed() end
+		if state.sidebar_level == "worktrees" then
+			local _, group = Sidebar.groups(state)
+			if group and Docker.supported(state.project) and state.project.removing_worktree ~= group.worktree.path then
+				Docker.run(group.worktree.path, "down", state.docker, render_sidebar, notify)
+			end
+		else
+			toggle_dismissed()
+		end
 	end, vim.tbl_extend("force", options, {
-		desc = "Remove worktree (keep branch), or dismiss/restore run",
+		desc = "Docker down for worktree, or dismiss/restore run",
 	}))
 	vim.keymap.set("n", "r", function()
 		local _, group = Sidebar.groups(state)
@@ -3443,8 +3499,8 @@ local function sidebar_mappings()
 	vim.keymap.set("n", "f", fork_selected, vim.tbl_extend("force", options, {
 		desc = "Fork and focus Agent Mode chat",
 	}))
-	vim.keymap.set("n", "D", dismiss_all, vim.tbl_extend("force", options, {
-		desc = "Dismiss idle recents and toggle queued dismissal for working recents",
+	vim.keymap.set("n", "D", remove_selected_worktree, vim.tbl_extend("force", options, {
+		desc = "Remove worktree (keep branch)",
 	}))
 	vim.keymap.set("n", "gg", function() move_selection(-math.huge) end, options)
 	vim.keymap.set("n", "G", function() move_selection(math.huge) end, options)
@@ -3642,6 +3698,8 @@ function M.open_selected(focus)
 	if not thread or state.move_pending[thread.id] then
 		return
 	end
+	local tree = Project.worktree_for(state.project, thread.cwd)
+	if tree and state.project.removing_worktree == tree.path then return end
 	hide_composer()
 	if thread._dismissed then
 		show_dismissed_thread(thread, focus)
@@ -3800,6 +3858,11 @@ local function wait_for_composer(session, prompt, attempt)
 end
 
 local function launch_new_chat(cwd, prompt, focus, plan_mode)
+	local tree = Project.worktree_for(state.project, cwd)
+	if tree and state.project.removing_worktree == tree.path then
+		notify("This worktree is being removed", vim.log.levels.WARN)
+		return
+	end
 	if focus == nil then
 		focus = true
 	end
@@ -3883,6 +3946,10 @@ local function submit_composer()
 	end
 	local target = current_target()
 	local cwd = target and target.path or state.project.launch_cwd
+	if state.project.removing_worktree == cwd then
+		notify("This worktree is being removed", vim.log.levels.WARN)
+		return
+	end
 	composer.busy = true
 	vim.bo[composer.buf].modifiable = false
 

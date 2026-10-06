@@ -207,3 +207,4 @@ WRN 2026-09-24T11:47:35.291 ?.2        server_start:199: Failed to start server:
 WRN 2026-09-24T11:47:43.393 ?.2        server_start:199: Failed to start server: operation not permitted: /run/user/1000/nvf.2.0
 WRN 2026-09-24T11:47:43.423 ?.2        server_start:199: Failed to start server: operation not permitted: /run/user/1000/nvf.2.0
 WRN 2026-10-01T11:56:30.634 ?.2        server_start:199: Failed to start server: operation not permitted: /run/user/1000/nvf.2.0
+WRN 2026-10-06T15:02:54.729 ?.2        server_start:199: Failed to start server: operation not permitted: /run/user/1000/nvf.2.0

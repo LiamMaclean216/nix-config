@@ -77,8 +77,6 @@ test("worktrees are the default, Enter drills into runs, and Esc returns", funct
 	assert(state.cursor_rows["feature-new"] and state.cursor_rows["main-run"])
 	press("j")
 	assert(state.selected_id == "feature-old")
-	press("j")
-	assert(state.selected_id == "feature-old", "run navigation must stay in the worktree")
 	press("k")
 	press("<CR>")
 	assert(opened == "feature-new")
@@ -94,6 +92,52 @@ test("worktrees are the default, Enter drills into runs, and Esc returns", funct
 	press("<Esc>")
 	press("gg")
 	assert(state.sidebar_worktree == "/repo")
+end)
+
+for _, keys in ipairs({ { "k", "j" }, { "<Up>", "<Down>" } }) do
+	for _, direction in ipairs({ -1, 1 }) do
+		test("run boundaries return to worktree browsing with " .. keys[direction == -1 and 1 or 2], function()
+			setup({ { path = "/repo" }, { path = "/branch" }, { path = "/last" } })
+			add("main-run", "/repo", 400)
+			add("feature-new", "/branch", 300); add("feature-old", "/branch", 200)
+			add("last-run", "/last", 100)
+			internals.sort_threads(); internals.render_sidebar()
+			press("j"); press("<CR>")
+			press(direction == -1 and "gg" or "G")
+			local selected = direction == -1 and "feature-new" or "feature-old"
+			assert(state.sidebar_level == "runs" and state.selected_id == selected)
+			local before, previously_opened, target = previews, opened, state.new_target
+			press(keys[direction == -1 and 1 or 2])
+			local path = direction == -1 and "/repo" or "/last"
+			assert(state.sidebar_level == "worktrees" and state.sidebar_worktree == path)
+			assert(vim.api.nvim_win_get_cursor(state.sidebar_win)[1] == state.group_rows[path])
+			assert(state.selected_id == selected and state.new_target == target)
+			assert(previews == before and opened == previously_opened, "do not preview or open a neighboring run")
+			assert(vim.api.nvim_get_current_win() == state.sidebar_win, "keep sidebar focus")
+			press(keys[direction == -1 and 2 or 1])
+			assert(state.sidebar_level == "worktrees" and state.sidebar_worktree == "/branch")
+			assert(previews == before, "subsequent movement must browse worktrees")
+			press("<CR>")
+			assert(state.sidebar_level == "runs" and state.selected_id == "feature-new")
+		end)
+	end
+end
+
+test("outer and empty run boundaries return to clamped worktree selection", function()
+	setup({ { path = "/repo" }, { path = "/empty" } })
+	add("main-run", "/repo")
+	internals.sort_threads(); internals.render_sidebar()
+	press("<CR>"); press("k")
+	assert(state.sidebar_level == "worktrees" and state.sidebar_worktree == "/repo")
+	press("j"); press("<CR>"); press("j")
+	assert(state.sidebar_level == "worktrees" and state.sidebar_worktree == "/empty")
+	press("<CR>"); press("k")
+	assert(state.sidebar_level == "worktrees" and state.sidebar_worktree == "/repo")
+	setup({ { path = "/repo" } })
+	add("only-run", "/repo")
+	internals.sort_threads(); internals.render_sidebar()
+	press("j")
+	assert(state.sidebar_level == "worktrees" and state.sidebar_worktree == "/repo")
 end)
 
 test("single worktrees navigate runs immediately; hovering the header exposes controls", function()
@@ -126,9 +170,19 @@ test("Docker actions cycle and target only the selected worktree", function()
 	press("h"); assert(state.sidebar_action == 3)
 	press("r")
 	assert(vim.deep_equal(actions[3], { "/branch", "restart" }))
+	press("d")
+	assert(vim.deep_equal(actions[4], { "/branch", "down" }))
+	state.project.removing_worktree = "/branch"
+	press("d")
+	assert(#actions == 4, "do not stop Docker while removing the worktree")
+	state.project.removing_worktree = nil
+	Docker.supported = function() return false end
+	press("d")
+	assert(#actions == 4, "Docker down is only available for supported projects")
+	Docker.supported = function() return true end
 	state.sidebar_level = "runs"
 	press("r")
-	assert(vim.deep_equal(actions[4], { "/branch", "restart" }))
+	assert(vim.deep_equal(actions[5], { "/branch", "restart" }))
 	assert(vim.fn.maparg("<C-r>", "n", false, true).callback == mode.resync)
 	Docker.supported, Docker.run = supported, run
 end)

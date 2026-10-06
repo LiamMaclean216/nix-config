@@ -1388,8 +1388,6 @@ end)
 
 for _, scenario in ipairs({
 	{ name = "the last conversation", ids = { "last" } },
-	{ name = "all conversations", ids = { "first", "last" }, all = true },
-	{ name = "all idle conversations while work continues", ids = { "idle", "working" }, all = true, working = true },
 	{ name = "the last conversation with a saved draft", ids = { "last" }, draft = true },
 }) do
 	test("dismissing " .. scenario.name .. " focuses the centered new-chat prompt", function()
@@ -1420,11 +1418,7 @@ for _, scenario in ipairs({
 				archive_thread = function(_, _, callback) archived = archived + 1; callback(nil) end,
 			}
 			mode.preload_selected()
-			if scenario.all then
-				internals.dismiss_all()
-			else
-				internals.dismiss_thread(state.threads[state.selected_id])
-			end
+			internals.dismiss_thread(state.threads[state.selected_id])
 			local expected = #scenario.ids - (scenario.working and 1 or 0)
 			assert(vim.wait(1000, function() return archived == expected end))
 			vim.wait(20, function() return false end)
@@ -1744,60 +1738,36 @@ test("failed interruption restores the active row without closing or archiving",
 	assert(not state.dismiss_pending.chat and not chat._dismissed)
 end)
 
-test("dismiss all queues working tasks while dismissing idle tasks", function()
-	local working = thread("working", nil, { status = { type = "active" } })
-	local idle = thread("idle", nil, { status = { type = "idle" } })
-	state.threads = { working = working, idle = idle }
-	state.active_order = { working, idle }
-	local archived
-	state.backend = {
-		interrupt_thread = function(_, id, callback) assert(id == "idle"); callback(nil) end,
-		archive_thread = function(_, id, callback) archived = id; callback(nil) end,
-	}
-	local new_chat = mode.new_chat
-	mode.new_chat = function() end
-	local ok, err = pcall(internals.dismiss_all)
-	mode.new_chat = new_chat
-	assert(ok, err)
-	assert(vim.wait(1000, function() return archived == "idle" end))
-	assert(state.threads.working == working and not state.dismissed_threads.working)
-	assert(working._dismiss_queued)
-end)
-
-for _, first in ipairs({ "d", "D" }) do
-	for _, second in ipairs({ "d", "D" }) do
-		test(first .. " queues working recents and " .. second .. " cancels dismissal", function()
-			local chat = thread("chat", nil, { status = { type = "active" } })
-			state.threads.chat = chat
-			state.opts.sidebar_width = 60
-			state.sidebar_buf = vim.api.nvim_create_buf(false, true)
-			internals.sidebar_mappings()
-			internals.sort_threads()
-			local function press(key)
-				vim.api.nvim_buf_call(state.sidebar_buf, function()
-					vim.fn.maparg(key, "n", false, true).callback()
-				end)
-			end
-			local function queued_label()
-				for _, line in ipairs(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)) do
-					if line:find("Queued to dismiss", 1, true) then
-						assert(line:match("Working .*Queued to dismiss%s*│$"), "queue label must end the status line")
-						return true
-					end
-				end
-			end
-			press(first)
-			assert(chat._dismiss_queued and not chat._dismissed and not state.dismiss_pending.chat)
-			assert(queued_label(), "queued rows need a visible label")
-			press(second)
-			assert(not chat._dismiss_queued and state.threads.chat == chat)
-			assert(not queued_label(), "cancelling must remove the label")
-			internals.handle_backend_notification("thread/status/changed", { threadId = "chat", status = { type = "idle" } })
-			assert(state.threads.chat == chat, "cancelled dismissal must survive completion")
-			vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+test("d queues working recents and cancels dismissal", function()
+	local chat = thread("chat", nil, { status = { type = "active" } })
+	state.threads.chat = chat
+	state.opts.sidebar_width = 60
+	state.sidebar_buf = vim.api.nvim_create_buf(false, true)
+	internals.sidebar_mappings()
+	internals.sort_threads()
+	local function press(key)
+		vim.api.nvim_buf_call(state.sidebar_buf, function()
+			vim.fn.maparg(key, "n", false, true).callback()
 		end)
 	end
-end
+	local function queued_label()
+		for _, line in ipairs(vim.api.nvim_buf_get_lines(state.sidebar_buf, 0, -1, false)) do
+			if line:find("Queued to dismiss", 1, true) then
+				assert(line:match("Working .*Queued to dismiss%s*│$"), "queue label must end the status line")
+				return true
+			end
+		end
+	end
+	press("d")
+	assert(chat._dismiss_queued and not chat._dismissed and not state.dismiss_pending.chat)
+	assert(queued_label(), "queued rows need a visible label")
+	press("d")
+	assert(not chat._dismiss_queued and state.threads.chat == chat)
+	assert(not queued_label(), "cancelling must remove the label")
+	internals.handle_backend_notification("thread/status/changed", { threadId = "chat", status = { type = "idle" } })
+	assert(state.threads.chat == chat, "cancelled dismissal must survive completion")
+	vim.api.nvim_buf_delete(state.sidebar_buf, { force = true })
+end)
 
 for _, ending in ipairs({ "idle", "systemError" }) do
 	test("queued dismissal waits through pauses and finishes on " .. ending, function()
