@@ -30,6 +30,10 @@ in
 {
   programs.waybar = {
     enable = true;
+    systemd = {
+      enable = true;
+      target = "hyprland-session.target";
+    };
     # Waybar otherwise forces widget opacity to zero immediately on SIGUSR1,
     # bypassing GTK transitions. Its existing .hidden class drives the fade.
     package = pkgs.waybar.overrideAttrs (old: {
@@ -108,4 +112,8 @@ in
 
     '';
   };
+
+  # The session's newer PipeWire JACK override is incompatible with Waybar's
+  # pinned glibc. Use Waybar's own Nix library paths, including on restarts.
+  systemd.user.services.waybar.Service.UnsetEnvironment = [ "LD_LIBRARY_PATH" ];
 }

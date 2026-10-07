@@ -1,0 +1,20 @@
+--- a/spa/plugins/bluez5/bap-codec-lc3.c
++++ b/spa/plugins/bluez5/bap-codec-lc3.c
+@@ -669,7 +669,16 @@
+ 	 * Frame length is not limited by ISO MTU, as kernel will fragment
+ 	 * and reassemble SDUs as needed.
+ 	 */
+-	if (pac->settings->duplex) {
++	/* Honor a compatible explicit preset before applying the conservative
++	 * duplex rate preference. Preserve the existing fallback when the
++	 * preset is absent or is not supported by the remote PAC.
++	 */
++	if (pac->settings->qos_name) {
++		found = select_bap_qos(&bap_qos, pac->settings, rate_mask,
++				duration_mask, framelen_min, framelen_max);
++		found = found && bap_qos.priority == UINT_MAX;
++	}
++	if (!found && pac->settings->duplex) {
+ 		/* 16KHz input is mandatory in BAP v1.0.1 Table 3.5, and 32KHz in TMAP,
+ 		 * so prefer those for now for input rate in duplex configuration.
+ 		 *

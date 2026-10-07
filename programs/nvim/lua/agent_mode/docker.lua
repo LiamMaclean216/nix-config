@@ -84,11 +84,12 @@ function M.label(cache, path)
 	return label .. (status.port and " · localhost:" .. status.port or "")
 end
 
-function M.run(path, action, cache, changed, report)
+function M.run(path, action, cache, changed, report, complete)
 	cache.actions = cache.actions or {}
 	if cache.actions[path] then return end
 	if vim.fn.filereadable(path .. "/scripts/dev.py") ~= 1 then
 		report("This worktree does not have scripts/dev.py", vim.log.levels.ERROR)
+		if complete then complete(false) end
 		return
 	end
 	cache.actions[path] = action == "restart" and "Docker restarting"
@@ -101,11 +102,41 @@ function M.run(path, action, cache, changed, report)
 				report("Docker " .. action .. " failed: " .. vim.trim(result.stderr or result.stdout or ""), vim.log.levels.ERROR)
 			end
 			changed()
+			if complete then complete(result.code == 0) end
 		end)
 	end
 	-- The launcher owns restart port preservation and fresh-worktree setup.
 	local ok, err = pcall(vim.system, { "python3", "scripts/dev.py", action }, { cwd = path, text = true }, done)
 	if not ok then done({ code = 1, stderr = tostring(err) }) end
+end
+
+function M.open(project, path, cache, changed, report)
+	cache.opening = cache.opening or {}
+	if cache.opening[path] or (cache.actions and cache.actions[path]) then return end
+	cache.opening[path] = true
+	local function finish(message)
+		cache.opening[path] = nil
+		if message then report(message, vim.log.levels.ERROR) end
+	end
+	local function inspect(start_if_needed)
+		-- Use a fresh query so stale sidebar state cannot open a stopped server.
+		local runtime = {}
+		M.refresh(project, runtime, function()
+			if runtime.error then finish("Could not check worktree Docker status"); return end
+			local status = runtime.worktrees[path]
+			if status and status.port and (not start_if_needed or status.running == status.total) then
+				local ok, _, err = pcall(vim.ui.open, "http://localhost:" .. status.port)
+				finish(not ok and "Could not open browser" or err)
+			elseif start_if_needed then
+				M.run(path, "up", cache, changed, report, function(success)
+					if success then inspect(false) else finish() end
+				end)
+			else
+				finish("Worktree started but no web port is available")
+			end
+		end)
+	end
+	inspect(true)
 end
 
 function M.destroy(path, cache, changed, callback)

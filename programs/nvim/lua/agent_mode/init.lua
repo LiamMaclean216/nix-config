@@ -711,6 +711,7 @@ render_sidebar = function()
 		state.sidebar_level == "worktrees" and "  [j/k] worktrees  [Enter] select" or "  [j/k] runs  [Esc] worktrees",
 		docker and "  [h/l] Enter / Docker up / down" or "",
 		docker and "  [r] restart Docker  [Ctrl-r] resync" or "  [r/Ctrl-r] resync",
+		docker and "  [o] open in browser (starts if stopped)" or "",
 		"  [gg/G] first/last",
 		"  [Tab/[/]] switch recents tab",
 		"  [/] filter  [Esc] clear filter",
@@ -3494,6 +3495,12 @@ local function sidebar_mappings()
 		local _, group = Sidebar.groups(state)
 		restart_worktree(group and group.worktree)
 	end, vim.tbl_extend("force", options, { desc = "Restart worktree Docker (resync for other projects)" }))
+	vim.keymap.set("n", "o", function()
+		local _, group = Sidebar.groups(state)
+		if group and Docker.supported(state.project) and state.project.removing_worktree ~= group.worktree.path then
+			Docker.open(state.project, group.worktree.path, state.docker, render_sidebar, notify)
+		end
+	end, vim.tbl_extend("force", options, { desc = "Open worktree in browser (start if stopped)" }))
 	vim.keymap.set("n", "<C-r>", M.resync, vim.tbl_extend("force", options, { desc = "Resync Agent Mode recents" }))
 	vim.keymap.set("n", "a", rename_selected_worktree, vim.tbl_extend("force", options, { desc = "Rename worktree / branch" }))
 	vim.keymap.set("n", "f", fork_selected, vim.tbl_extend("force", options, {

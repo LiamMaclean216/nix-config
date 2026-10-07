@@ -15,6 +15,22 @@ let
   };
   claude-code = inputs.nix-claude-code.packages.${pkgs.system}.default;
   codex = inputs.codex-nix.packages.${pkgs.system}.default;
+  # Honor an explicitly selected LE Audio preset before PipeWire's default
+  # 32 kHz duplex preference. Unconfigured devices retain upstream behavior.
+  pipewire-buds = pkgs-unstable.pipewire.overrideAttrs (old: {
+    patches = (old.patches or []) ++ [
+      ./packages/pipewire-bap/explicit-duplex-preset.patch
+      # Upstream fix for an ISO receive callback racing microphone shutdown.
+      ./packages/pipewire-bap/upstream-iso-source-teardown.patch
+    ];
+  });
+  mt7925-bluetooth-firmware = pkgs.runCommand
+    "mt7925-bluetooth-firmware-${pkgs-unstable.linux-firmware.version}"
+    { meta.priority = 1; }
+    ''
+      mkdir -p "$out/lib/firmware/mediatek/mt7925"
+      cp ${pkgs-unstable.linux-firmware}/lib/firmware/mediatek/mt7925/BT_RAM_CODE_MT7925_1_1_hdr.bin "$out/lib/firmware/mediatek/mt7925/"
+    '';
 in
 {
   imports = [
@@ -48,6 +64,8 @@ in
         # Shows battery charge of connected devices on supported
         # Bluetooth adapters. Defaults to 'false'.
         Experimental = true;
+        # ISO sockets are required for LE Audio playback and microphone.
+        KernelExperimental = "6fbaf188-05e0-496a-9885-d6ddfdb4e03e";
         # When enabled other devices can connect faster to us, however
         # the tradeoff is increased power consumption. Defaults to
         # 'false'.
@@ -65,10 +83,53 @@ in
       };
     };
   };
+  # A saved rfkill soft-block overrides BlueZ's AutoEnable/powerOnBoot.
+  # Clear Bluetooth-only saved blocks once per boot, before rfkill restores
+  # them. This runs system-wide, including at the login screen; manual radio
+  # toggles during the session remain effective until the next boot.
+  systemd.services.bluetooth-boot-state = {
+    description = "Enable Bluetooth at boot regardless of saved radio state";
+    restartIfChanged = false;
+    before = [ "systemd-rfkill.service" "bluetooth.service" ];
+    after = [ "systemd-remount-fs.service" ];
+    unitConfig = {
+      DefaultDependencies = false;
+      RequiresMountsFor = "/var/lib/systemd/rfkill";
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      for state in /var/lib/systemd/rfkill/*:bluetooth; do
+        [ -f "$state" ] || continue
+        printf '0\n' > "$state"
+      done
+      if [ -e /dev/rfkill ]; then
+        ${pkgs.util-linux}/bin/rfkill unblock bluetooth
+      fi
+    '';
+  };
+  systemd.services.systemd-rfkill = {
+    requires = [ "bluetooth-boot-state.service" ];
+    after = [ "bluetooth-boot-state.service" ];
+  };
+  systemd.services.bluetooth = {
+    requires = [ "bluetooth-boot-state.service" ];
+    after = [ "bluetooth-boot-state.service" ];
+  };
   services.blueman.enable = true;
   # boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"]; # Conflicting/unnecessary modules removed
   # Switch to default LTS kernel for better stability
   boot.kernelPackages = pkgs.linuxPackages;
+  # Skip MT7925's padded USB ISO data instead of treating it as audio packets.
+  # Build both modules together because they share struct btmtk_data.
+  boot.extraModulePackages = [
+    (pkgs.callPackage ./packages/mt7925-iso-padding {
+      kernel = config.boot.kernelPackages.kernel;
+      stdenv = config.boot.kernelPackages.kernel.stdenv;
+    })
+  ];
 
   # The TP-Link Archer T4U v3 uses RTL8822BU, not MediaTek.
   # Keep it in USB 2 mode: USB 3 mode switching has coincided with register
@@ -81,6 +142,7 @@ in
   # Enable firmware updates for WiFi and other hardware
   hardware.enableRedistributableFirmware = true;
   hardware.firmware = [
+    mt7925-bluetooth-firmware
     pkgs.linux-firmware
     # Firmware for the ASUS/Broadcom Bluetooth adapter (0b05:17cb).
     pkgs.broadcom-bt-firmware
@@ -179,12 +241,15 @@ in
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
+    package = pipewire-buds;
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
     wireplumber = {
       enable = true;
+      # 0.5.14+ fixes channel mapping for coordinated LE Audio earbuds.
+      package = pkgs-unstable.wireplumber;
       extraConfig = {
         "51-bluez-config" = {
           "monitor.bluez.properties" = {
@@ -198,6 +263,8 @@ in
             "bluez5.roles" = [
               "a2dp_sink"
               "a2dp_source"
+              "bap_sink"
+              "bap_source"
               "hfp_ag"
             ];
           };
@@ -217,12 +284,38 @@ in
                 };
               };
             }
+            {
+              matches = [
+                { "device.name" = "bluez_card.B0_64_E0_D4_A7_5C"; }
+                { "device.name" = "bluez_card.B0_64_E0_7E_71_06"; }
+              ];
+              actions."update-props" = {
+                # Reconnect these earbuds using LE Audio, including their mic.
+                "bluez5.auto-connect" = [ "bap_sink" "bap_source" ];
+                # 48 kHz in both directions; 10 ms frames with extra retry
+                # budget avoid the unreliable default 7.5 ms call transport.
+                "bluez5.bap.preset" = "48_2_2";
+                "bluez5.bap.force-target-latency" = "high-reliability";
+              };
+            }
+            {
+              matches = [
+                { "node.name" = "bluez_input.B0_64_E0_D4_A7_5C.0"; }
+                { "node.name" = "bluez_input.B0_64_E0_7E_71_06.0"; }
+              ];
+              actions."update-props" = {
+                # Keep both microphones aligned with 40 ms of jitter buffer
+                # at 48 kHz, even when a call requests a smaller audio quantum.
+                "bluez5.decode-buffer.latency" = 1920;
+              };
+            }
           ];
         };
         "11-bluetooth-policy" = {
           "wireplumber.settings" = {
-            # Enable the earbuds' mic during calls, then restore stereo audio.
-            "bluetooth.autoswitch-to-headset-profile" = true;
+            # BAP duplex provides stereo and microphone simultaneously;
+            # automatic classic profile switching would interrupt that link.
+            "bluetooth.autoswitch-to-headset-profile" = false;
             "device.restore-profile" = false;
           };
         };
@@ -237,6 +330,7 @@ in
               actions = {
                 "update-props" = {
                   priorities = [
+                    "bap-duplex"
                     "a2dp-sink-aac"
                     "a2dp-sink"
                     "a2dp-sink-sbc_xq"
@@ -255,6 +349,10 @@ in
       };
     };
   };
+
+  # WirePlumber hosts the Bluetooth SPA plugins; use the patched codec there.
+  systemd.user.services.wireplumber.environment.SPA_PLUGIN_DIR =
+    "${pipewire-buds}/lib/spa-0.2";
 
   # Enable touchpad support (enabled default in most desktopManager).
   # services.xserver.libinput.enable = true;

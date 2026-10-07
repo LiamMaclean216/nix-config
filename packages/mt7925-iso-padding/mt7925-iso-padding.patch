@@ -1,0 +1,85 @@
+diff --git a/drivers/bluetooth/btmtk.c b/drivers/bluetooth/btmtk.c
+index ab34f1dd42bc..934daf004dd6 100644
+--- a/drivers/bluetooth/btmtk.c
++++ b/drivers/bluetooth/btmtk.c
+@@ -1088,11 +1088,34 @@ struct urb *alloc_mtk_intr_urb(struct hci_dev *hdev, struct sk_buff *skb,
+ }
+ EXPORT_SYMBOL_GPL(alloc_mtk_intr_urb);
+ 
++static bool check_isopkt(struct hci_dev *hdev, void *buffer, int count,
++			 int pktsize)
++{
++	struct btmtk_data *btmtk_data = hci_get_priv(hdev);
++
++	/* With MT7925 we receive URBs that have size MTK_ISO_THRESHOLD, with
++	 * trailing zero padding following the ISO packet data. This appears not
++	 * intentional, so flag an error, and skip rest of the URB to not
++	 * generate ISO packets from the padding.
++	 */
++	if (btmtk_data->isopkt_rx_pad && pktsize == MTK_ISO_THRESHOLD &&
++	    count < pktsize && mem_is_zero(buffer, count)) {
++		if (!btmtk_data->isopkt_padding_seen) {
++			btmtk_data->isopkt_padding_seen = true;
++			bt_dev_err(hdev, "Zero ISO data (only first reported)");
++		}
++		return false;
++	}
++
++	return true;
++}
++
+ static int btmtk_recv_isopkt(struct hci_dev *hdev, void *buffer, int count)
+ {
+ 	struct btmtk_data *btmtk_data = hci_get_priv(hdev);
+ 	struct sk_buff *skb;
+ 	unsigned long flags;
++	int pktsize = count;
+ 	int err = 0;
+ 
+ 	spin_lock_irqsave(&btmtk_data->isorxlock, flags);
+@@ -1102,6 +1125,9 @@ static int btmtk_recv_isopkt(struct hci_dev *hdev, void *buffer, int count)
+ 		int len;
+ 
+ 		if (!skb) {
++			if (!check_isopkt(hdev, buffer, count, pktsize))
++				break;
++
+ 			skb = bt_skb_alloc(HCI_MAX_ISO_SIZE, GFP_ATOMIC);
+ 			if (!skb) {
+ 				err = -ENOMEM;
+@@ -1250,6 +1276,15 @@ static int btmtk_usb_isointf_init(struct hci_dev *hdev)
+ 
+ 	spin_lock_init(&btmtk_data->isorxlock);
+ 
++	switch (btmtk_data->dev_id) {
++	case 0x7925:
++		btmtk_data->isopkt_rx_pad = true;
++		break;
++	default:
++		btmtk_data->isopkt_rx_pad = false;
++		break;
++	}
++
+ 	__set_mtk_intr_interface(hdev);
+ 
+ 	err = btmtk_submit_intr_urb(hdev, GFP_KERNEL);
+diff --git a/drivers/bluetooth/btmtk.h b/drivers/bluetooth/btmtk.h
+index c83c24897c95..bd97e37afd99 100644
+--- a/drivers/bluetooth/btmtk.h
++++ b/drivers/bluetooth/btmtk.h
+@@ -177,6 +177,8 @@ struct btmtk_data {
+ 	struct usb_interface *isopkt_intf;
+ 	struct usb_anchor isopkt_anchor;
+ 	struct sk_buff *isopkt_skb;
++	bool isopkt_rx_pad;
++	bool isopkt_padding_seen;
+ 
+ 	/* spinlock for ISO data transmission */
+ 	spinlock_t isorxlock;
+-- 
+2.53.0
+
+
+
+
+
