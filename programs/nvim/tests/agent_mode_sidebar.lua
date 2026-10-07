@@ -228,6 +228,99 @@ test("restart follows a selected chat row and the focused chat pane's own worktr
 	Docker.supported, Docker.run, mode.resync = supported, run, resync
 end)
 
+test("o opens the selected worktree from its header or a chat inside it", function()
+	setup({ { path = "/repo" }, { path = "/branch" } })
+	add("branch-chat", "/branch/subdir")
+	local supported, open = Docker.supported, Docker.open
+	Docker.supported = function() return true end
+	state.docker = { checked = os.time(), worktrees = {} }
+	local paths = {}
+	Docker.open = function(_, path) table.insert(paths, path) end
+	internals.sort_threads(); internals.render_sidebar()
+	internals.select_sidebar_row(state.group_rows["/branch"])
+	press("o")
+	internals.select_sidebar_row(state.cursor_rows["branch-chat"])
+	press("o")
+	assert(vim.deep_equal(paths, { "/branch", "/branch" }))
+	state.project.removing_worktree = "/branch"
+	press("o"); assert(#paths == 2)
+	state.project.removing_worktree = nil
+	Docker.supported = function() return false end
+	press("o"); assert(#paths == 2)
+	Docker.supported, Docker.open = supported, open
+end)
+
+test("b rebuilds the selected worktree from its header or a chat inside it", function()
+	setup({ { path = "/repo" }, { path = "/branch" } })
+	add("branch-chat", "/branch/subdir")
+	local supported, run = Docker.supported, Docker.run
+	Docker.supported = function() return true end
+	state.docker = { checked = os.time(), worktrees = {} }
+	local paths = {}
+	Docker.run = function(path, action, _, _, _, _, args)
+		assert(action == "restart" and vim.deep_equal(args, { "--build" }))
+		table.insert(paths, path)
+	end
+	internals.sort_threads(); internals.render_sidebar()
+	internals.select_sidebar_row(state.group_rows["/branch"])
+	press("b")
+	internals.select_sidebar_row(state.cursor_rows["branch-chat"])
+	press("b")
+	assert(vim.deep_equal(paths, { "/branch", "/branch" }))
+	state.project.removing_worktree = "/branch"
+	press("b"); assert(#paths == 2)
+	state.project.removing_worktree = nil
+	Docker.supported = function() return false end
+	press("b"); assert(#paths == 2)
+	Docker.supported, Docker.run = supported, run
+end)
+
+for _, scenario in ipairs({ "running", "stopped", "partial", "startup failure", "query failure", "missing port" }) do
+	test("browser opening handles " .. scenario, function()
+		local system, readable, supported, open = vim.system, vim.fn.filereadable, Docker.supported, vim.ui.open
+		Docker.supported = function() return true end
+		vim.fn.filereadable = function() return 1 end
+		local pending, opened, errors, cache = {}, {}, {}, {}
+		vim.system = function(argv, opts, callback)
+			table.insert(pending, { argv = argv, opts = opts, reply = callback })
+		end
+		vim.ui.open = function(url) table.insert(opened, url) end
+		local function request()
+			Docker.open({}, "/branch", cache, function() end, function(err) table.insert(errors, err) end)
+		end
+		local function runtime(port, partial)
+			local output = vim.json.encode({ directory = "/branch", files = "docker-compose.override.yml",
+				service = "web", state = "running", ports = "127.0.0.1:" .. port .. "->8000/tcp" })
+			if partial then output = output .. "\n" .. vim.json.encode({ directory = "/branch",
+				files = "docker-compose.override.yml", service = "db", state = "exited" }) end
+			return output
+		end
+		request(); request()
+		assert(#pending == 1 and pending[1].argv[1] == "docker", "coalesce open requests")
+		pending[1].reply({ code = scenario == "query failure" and 1 or 0,
+			stdout = scenario == "running" and runtime("8100") or scenario == "partial" and runtime("8100", true) or "" })
+		assert(vim.wait(1000, function() return #pending == 2 or not cache.opening["/branch"] end))
+		if scenario ~= "running" and scenario ~= "query failure" then
+			assert(#opened == 0, "wait for startup")
+			assert(vim.deep_equal(pending[2].argv, { "python3", "scripts/dev.py", "up" }))
+			assert(pending[2].opts.cwd == "/branch")
+			pending[2].reply({ code = scenario == "startup failure" and 1 or 0, stderr = "startup failed" })
+			assert(vim.wait(1000, function() return #pending == 3 or not cache.opening["/branch"] end))
+			if scenario ~= "startup failure" then
+				pending[3].reply({ code = 0, stdout = scenario == "missing port" and "" or runtime("8101") })
+			end
+		end
+		assert(vim.wait(1000, function() return not cache.opening["/branch"] end))
+		if scenario == "running" or scenario == "stopped" or scenario == "partial" then
+			assert(vim.deep_equal(opened, { "http://localhost:" .. (scenario == "running" and "8100" or "8101") }))
+			assert(#errors == 0)
+		else
+			assert(#opened == 0 and #errors == 1)
+		end
+		vim.system, vim.fn.filereadable, Docker.supported, vim.ui.open = system, readable, supported, open
+	end)
+end
+
 test("runtime Docker state distinguishes running, partial, down, and errors, and refreshes ports", function()
 	local system, supported = vim.system, Docker.supported
 	Docker.supported = function() return true end
@@ -284,8 +377,10 @@ test("Docker launcher is asynchronous, preserves data, and allows retry after fa
 	vim.system, vim.fn.filereadable = system, readable
 end)
 
-for _, initialized in ipairs({ true, false }) do
-	test("Docker restart delegates to the launcher and permits retry (saved state: " .. tostring(initialized) .. ")", function()
+for _, variant in ipairs({ { true, false }, { false, false }, { true, true }, { false, true } }) do
+	local initialized, build = unpack(variant)
+	test("Docker restart delegates to the launcher and permits retry (saved state: " .. tostring(initialized)
+		.. ", build: " .. tostring(build) .. ")", function()
 		local system, readable = vim.system, vim.fn.filereadable
 		vim.fn.filereadable = function(path)
 			assert(path == "/branch/scripts/dev.py" or path == "/branch/.env.worktree")
@@ -293,12 +388,15 @@ for _, initialized in ipairs({ true, false }) do
 		end
 		local calls, reply, cache, reported = 0, nil, {}, nil
 		vim.system = function(argv, opts, callback)
-			assert(vim.deep_equal(argv, { "python3", "scripts/dev.py", "restart" }))
+			local expected = { "python3", "scripts/dev.py", "restart" }
+			if build then table.insert(expected, "--build") end
+			assert(vim.deep_equal(argv, expected))
 			assert(opts.cwd == "/branch")
 			calls, reply = calls + 1, callback
 		end
 		local function restart()
-			Docker.run("/branch", "restart", cache, function() end, function(err) reported = err end)
+			Docker.run("/branch", "restart", cache, function() end, function(err) reported = err end,
+				nil, build and { "--build" } or nil)
 		end
 		restart(); restart()
 		assert(calls == 1 and Docker.label(cache, "/branch") == "Docker restarting…")

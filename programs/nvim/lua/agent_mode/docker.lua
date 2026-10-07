@@ -84,9 +84,12 @@ function M.label(cache, path)
 	return label .. (status.port and " · localhost:" .. status.port or "")
 end
 
-function M.run(path, action, cache, changed, report, complete)
+function M.run(path, action, cache, changed, report, complete, extra_args)
 	cache.actions = cache.actions or {}
-	if cache.actions[path] then return end
+	if cache.actions[path] then
+		if complete then complete(false) end
+		return
+	end
 	if vim.fn.filereadable(path .. "/scripts/dev.py") ~= 1 then
 		report("This worktree does not have scripts/dev.py", vim.log.levels.ERROR)
 		if complete then complete(false) end
@@ -106,11 +109,13 @@ function M.run(path, action, cache, changed, report, complete)
 		end)
 	end
 	-- The launcher owns restart port preservation and fresh-worktree setup.
-	local ok, err = pcall(vim.system, { "python3", "scripts/dev.py", action }, { cwd = path, text = true }, done)
+	local command = vim.list_extend({ "python3", "scripts/dev.py", action }, extra_args or {})
+	local ok, err = pcall(vim.system, command, { cwd = path, text = true }, done)
 	if not ok then done({ code = 1, stderr = tostring(err) }) end
 end
 
 function M.open(project, path, cache, changed, report)
+	if not M.supported(project) then return end
 	cache.opening = cache.opening or {}
 	if cache.opening[path] or (cache.actions and cache.actions[path]) then return end
 	cache.opening[path] = true
