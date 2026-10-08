@@ -1,33 +1,13 @@
-{ pkgs, lib, ... }:
+{ pkgs, ... }:
 
 let
   theme = import ./theme.nix;
-  discordStatusScript = pkgs.writeShellScript "waybar-discord-status" ''
-    set -euo pipefail
+  audioPopup = pkgs.callPackage ./audio-popup { };
 
-    data="$(${pkgs.hyprland}/bin/hyprctl clients -j 2>/dev/null || printf '[]')"
-
-    if [ -z "$data" ]; then
-      echo '{"text":"","class":"discord","tooltip":"Discord"}'
-      exit 0
-    fi
-
-    urgent=$(${pkgs.jq}/bin/jq -r '
-      map(select(
-        ((.class // "") | ascii_downcase == "discord") or
-        ((.initialClass // "") | ascii_downcase == "discord")
-      ) | select(.urgent == true))
-      | length > 0
-    ' <<<"$data" 2>/dev/null || printf 'false')
-
-    if [ "$urgent" = "true" ]; then
-      echo '{"text":"","class":"discord unread","tooltip":"Unread Discord notifications"}'
-    else
-      echo '{"text":"","class":"discord","tooltip":"Discord"}'
-    fi
-  '';
 in
 {
+  home.packages = [ audioPopup ];
+
   programs.waybar = {
     enable = true;
     systemd = {
@@ -39,6 +19,8 @@ in
     package = pkgs.waybar.overrideAttrs (old: {
       patches = (old.patches or [ ]) ++ [
         ./waybar-clock-anchor.patch
+        # Hide on the clock's text bounds, leaving padding and audio untouched.
+        ./waybar-clock-hide.patch
         # Reloads must disconnect monitor callbacks before binding them again.
         ./waybar-reload.patch
       ];
@@ -55,25 +37,30 @@ in
       # The local package patch implements this without a fixed date-text width.
       anchor-right = true;
       exclusive = false;
-      passthrough = true;
+      passthrough = false;
       height = 40;
       spacing = 6;
       margin = "0 5 5 0";
       modules-left = [ ];
       modules-center = [ ];
-      modules-right = [  "clock" ];
-      # Keep the fading clock above windows until its alpha reaches zero.
-      # Waybar's built-in invisible mode otherwise moves it behind them at once.
-      modes.invisible = {
-        layer = "overlay";
-        exclusive = false;
-        passthrough = true;
-        visible = false;
+      modules-right = [ "pulseaudio" "clock" ];
+      pulseaudio = {
+        format = "{icon}";
+        format-muted = "󰝟";
+        format-icons = { default = [ "󰕿" "󰖀" "󰕾" ]; };
+        tooltip = false;
+        on-click = "${audioPopup}/bin/audio-popup";
+        on-click-right = "${pkgs.pavucontrol}/bin/pavucontrol";
+        # Override the module's built-in wheel volume control.
+        on-scroll-up = ":";
+        on-scroll-down = ":";
+        max-volume = 100;
       };
 
       clock = {
         format = "{:%a %d %b  %H:%M}";
         tooltip = false;
+        hide-on-click = 30;
       };
     };
 
@@ -98,11 +85,11 @@ in
 
       window#waybar.hidden { opacity: 0; }
 
-      #clock {
+      .modules-right {
         background-color: alpha(@background, @glass-opacity@);
         background-image: @glass-sheen@;
         border-radius: @radius@px;
-        padding: 11px 20px 9px 20px;
+        padding: 0 6px;
         letter-spacing: 0.3px;
         color: @foreground;
         border: none;
@@ -110,7 +97,38 @@ in
         font-weight: 400;
       }
 
+      #clock { padding: 11px 15px 9px 8px; }
+      #pulseaudio {
+        padding: 0 13px;
+        margin: 5px 0;
+        border-radius: 20px;
+        font-family: "Symbols Nerd Font Mono";
+        font-size: 18px;
+        color: @foreground;
+      }
+      #pulseaudio:hover { background: alpha(@foreground, 0.10); }
+      #pulseaudio.muted { color: @muted; }
+      tooltip {
+        background: @background;
+        color: @foreground;
+        border-radius: 10px;
+      }
     '';
+  };
+
+  systemd.user.services.audio-volume-memory = {
+    Unit = {
+      Description = "Remember application playback volumes across reconnects";
+      After = [ "pipewire-pulse.service" ];
+      PartOf = [ "hyprland-session.target" ];
+    };
+    Install.WantedBy = [ "hyprland-session.target" ];
+    Service = {
+      ExecStart = "${audioPopup}/bin/audio-volume-memory";
+      Restart = "on-failure";
+      RestartSec = 2;
+      UnsetEnvironment = [ "LD_LIBRARY_PATH" ];
+    };
   };
 
   # The session's newer PipeWire JACK override is incompatible with Waybar's

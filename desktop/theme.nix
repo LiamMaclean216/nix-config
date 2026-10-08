@@ -62,9 +62,9 @@ rec {
       adaptive_boost = 0.0;
       layers = {
         enabled = true;
-        namespaces = "wofi, voice-input, logout_dialog, waybar";
+        namespaces = "wofi, voice-input, logout_dialog, waybar, audio-popup";
         mask_mode = "alpha";
-        namespace_mask_thresholds = "wofi=0.05, voice-input=0.05, logout_dialog=0.05, waybar=0.05";
+        namespace_mask_thresholds = "wofi=0.05, voice-input=0.05, logout_dialog=0.05, waybar=0.05, audio-popup=0.05";
         live_resample = true;
         # Follow damaged compositor frames, including this monitor's 240 Hz.
         # An idle pane still reuses its cached backdrop.

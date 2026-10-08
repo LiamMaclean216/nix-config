@@ -46,3 +46,27 @@ Apply with `make home`, then reopen Dolphin. Home Manager generations provide
 rollback. New files must be tracked by Git for a Git-backed flake evaluation;
 while developing untracked modules, use
 `nix run .#home-manager -- switch --flake path:.#liam`.
+
+The GTK `LiquidGlass` theme gives Blueman and Pavucontrol the same opaque
+charcoal surfaces, cream text, amber sliders and rounded controls as Dolphin.
+It is installed as a base theme so the glass overlays keep their own styling.
+Reopen existing GTK apps after activation to pick up the theme.
+
+The bottom-right Waybar clock stays visible on hover. Clicking the date or time
+text hides the whole bar for 30 seconds, then it fades back in. The clock's
+padding and the gap beside the speaker do not trigger hiding. Click the speaker icon
+for a compact Sound panel above the bar. Main output volume stays at the top;
+active playback apps appear below with their icons and volume sliders.
+Click outside, click the icon again or the close button, or press Escape to close it.
+Scroll only moves the list; it never changes any volume. There are no input,
+microphone, mute or device-selection controls. Moving a muted output's slider
+above zero unmutes it. The speaker has no tooltip; right-click opens the full mixer.
+The popup uses the same glass tint, opacity and radius as the clock and sits just
+above it. Controls follow audio hotplug and reconnect if the audio server restarts.
+
+`audio-volume-memory.service` remembers playback levels by application identity.
+It restores those levels when an app recreates its stream, after the app's initial
+volume request, and remembers later changes from the popup or full mixer. This
+keeps reconnects from replacing saved app levels with their startup defaults.
+It does not restore microphone or master-device levels. State lives under
+`$XDG_STATE_HOME/audio-popup/` (normally `~/.local/state/audio-popup/`).

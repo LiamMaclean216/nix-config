@@ -3,6 +3,20 @@ let
   theme = import ./theme.nix;
   themeJson = pkgs.writeText "desktop-theme.json" (builtins.toJSON themeData);
   themeData = { inherit (theme) colors radius font qt glass; };
+  gtkCss = pkgs.writeText "liquid-glass-gtk.css"
+    (theme.renderCss (builtins.readFile ./gtk/apps.css));
+  gtkTheme = pkgs.runCommand "liquid-glass-gtk-theme" { } ''
+    mkdir -p $out/share/themes/LiquidGlass/{gtk-2.0,gtk-3.0,gtk-4.0}
+    ln -s ${pkgs.gnome-themes-extra}/share/themes/Adwaita-dark/gtk-2.0/gtkrc \
+      $out/share/themes/LiquidGlass/gtk-2.0/gtkrc
+    echo '@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");' \
+      > $out/share/themes/LiquidGlass/gtk-3.0/gtk.css
+    echo '@import url("resource:///org/gtk/libgtk/theme/Default/gtk-dark.css");' \
+      > $out/share/themes/LiquidGlass/gtk-4.0/gtk.css
+    for version in 3 4; do
+      cat ${gtkCss} >> $out/share/themes/LiquidGlass/gtk-$version.0/gtk.css
+    done
+  '';
   qtTheme = pkgs.runCommand "liquid-glass-qt-theme" {
     nativeBuildInputs = [pkgs.python3];
   } ''
@@ -11,6 +25,17 @@ let
       ${themeJson} $out
   '';
 in {
+  # GTK3 Blueman and GTK4 Pavucontrol use the same opaque palette as Dolphin.
+  gtk = {
+    enable = true;
+    font = { name = theme.font; size = theme.qt.fontSize; };
+    iconTheme = { name = theme.qt.icons; package = pkgs.kdePackages.breeze-icons; };
+    # Theme priority lets each layer panel retain its own glass styling.
+    theme = { name = "LiquidGlass"; package = gtkTheme; };
+    gtk3.extraConfig.gtk-application-prefer-dark-theme = true;
+    gtk4.extraConfig.gtk-application-prefer-dark-theme = true;
+  };
+
   qt = {
     enable = true;
     platformTheme = {

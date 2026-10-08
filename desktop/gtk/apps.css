@@ -1,0 +1,52 @@
+/* Opaque application surfaces match Dolphin; layer panels own their glass. */
+@define-color theme_bg_color @background;
+@define-color theme_fg_color @foreground;
+@define-color theme_base_color @sidebar;
+@define-color theme_text_color @foreground;
+@define-color theme_selected_bg_color @selection;
+@define-color theme_selected_fg_color @foreground;
+@define-color insensitive_fg_color @muted;
+@define-color borders alpha(@foreground, 0.10);
+@define-color accent_bg_color @selection;
+@define-color accent_fg_color @foreground;
+@define-color accent_color @accent;
+@define-color window_bg_color @background;
+@define-color window_fg_color @foreground;
+@define-color view_bg_color @sidebar;
+@define-color view_fg_color @foreground;
+@define-color headerbar_bg_color @background;
+@define-color headerbar_fg_color @foreground;
+@define-color popover_bg_color @background;
+@define-color popover_fg_color @foreground;
+window.background { background-color: @background; color: @foreground; }
+window.background label { text-shadow: none; }
+headerbar, toolbar, .toolbar {
+  background: @background; color: @foreground; box-shadow: none;
+  border: none; padding: 8px;
+}
+notebook > header { background: @sidebar; border: none; padding: 5px; }
+notebook > header tab { border: none; border-radius: 10px; padding: 8px 12px; color: @muted; }
+notebook > header tab:checked { background: @selection; color: @foreground; }
+treeview.view, list, .view { background-color: @sidebar; color: @foreground; }
+treeview.view:selected, row:selected { background-color: @selection; color: @foreground; }
+treeview header button { background: @background; color: @muted; border: none; }
+window.background button {
+  background-image: none; background-color: @surface; color: @foreground;
+  border: none; border-radius: 10px; box-shadow: none; text-shadow: none;
+  padding: 7px 10px;
+}
+window.background button:hover { background-color: @selection; }
+window.background button:checked { background-color: @selection; color: @accent; }
+window.background button:disabled { color: @muted; }
+entry, spinbutton, combobox button {
+  background: @sidebar; color: @foreground; border: 1px solid alpha(@foreground, 0.08);
+  border-radius: 10px; padding: 7px;
+}
+scale trough { background: @surface; border: none; min-height: 5px; border-radius: 6px; }
+scale highlight { background: @accent; border: none; border-radius: 6px; }
+scale slider { background: @foreground; border: none; box-shadow: none; }
+progressbar progress, levelbar block.filled { background: @accent; border: none; }
+switch:checked { background: @accent; }
+menu, popover contents { background: @background; color: @foreground; border-radius: 10px; }
+menuitem:hover { background: @selection; }
+separator { background: alpha(@foreground, 0.08); min-height: 1px; min-width: 1px; }

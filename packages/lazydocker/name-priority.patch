@@ -1,0 +1,42 @@
+--- a/pkg/gui/containers_panel.go
++++ b/pkg/gui/containers_panel.go
+@@ -108,7 +108,23 @@
+ 	"created": 3,
+ }
+ 
++// namePriority pins web and taskiq names ahead of the usual panel ordering.
++func namePriority(name string) int {
++	switch {
++	case strings.Contains(name, "web"):
++		return 0
++	case strings.Contains(name, "taskiq"):
++		return 1
++	default:
++		return 2
++	}
++}
++
+ func sortContainers(a *commands.Container, b *commands.Container, legacySort bool) bool {
++	if left, right := namePriority(a.Name), namePriority(b.Name); left != right {
++		return left < right
++	}
++
+ 	if legacySort {
+ 		return a.Name < b.Name
+ 	}
+--- a/pkg/gui/services_panel.go
++++ b/pkg/gui/services_panel.go
+@@ -62,8 +62,12 @@
+ 		},
+ 		NoItemsMessage: gui.Tr.NoServices,
+ 		Gui:            gui.intoInterface(),
+-		// sort services first by whether they have a linked container, and second by alphabetical order
++		// Pin priority names, then sort by linked container and alphabetical order
+ 		Sort: func(a *commands.Service, b *commands.Service) bool {
++			if left, right := namePriority(a.Name), namePriority(b.Name); left != right {
++				return left < right
++			}
++
+ 			if a.Container != nil && b.Container == nil {
+ 				return true
+ 			}

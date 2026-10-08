@@ -29,7 +29,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("@SESSION_START@")
     for _, command in ipairs({
         "systemctl --user start --no-block blueman-applet.service",
-        "hyprpaper", "hyprctl setcursor Adwaita 24", "@WAYBAR_HIDE@",
+        "hyprpaper", "hyprctl setcursor Adwaita 24",
         "systemctl --user start --no-block hyprlock-solar-times.service",
         "hypridle", "hyprlock || hyprctl dispatch 'hl.dsp.exit()'",
     }) do hl.exec_cmd(command) end

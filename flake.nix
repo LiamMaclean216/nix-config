@@ -34,6 +34,11 @@
       system = "x86_64-linux";
       desktopOverlay = final: prev: {
         gh = inputs.nixpkgs-gh.legacyPackages.${system}.gh;
+        lazydocker = prev.lazydocker.overrideAttrs (old: {
+          patches = (old.patches or []) ++ [
+            ./packages/lazydocker/name-priority.patch
+          ];
+        });
         # Firefox 146 crashes against newer Wayland color-management globals.
         firefox = inputs.hyprland.inputs.nixpkgs.legacyPackages.${system}.firefox;
         # The lock-screen controls use the current Hyprlock widget options.
@@ -58,7 +63,7 @@
       pkgs = import nixpkgs { inherit system; overlays = [ desktopOverlay ]; };
     in {
       packages.${system} = {
-        inherit (pkgs) gh hyprland hyprglass;
+        inherit (pkgs) gh hyprland hyprglass lazydocker;
         home-manager = home-manager.packages.${system}.home-manager;
         codex = inputs.codex-nix.packages.${system}.default;
       };

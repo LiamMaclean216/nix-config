@@ -170,7 +170,10 @@ local function handle_sidebar_hover()
 	end
 end
 
+local sidebar_mouse_down
+
 local function handle_input_click()
+	sidebar_mouse_down = nil
 	if not valid_tab(state.tab) or vim.api.nvim_get_current_tabpage() ~= state.tab then
 		return "<LeftMouse>"
 	end
@@ -180,6 +183,10 @@ local function handle_input_click()
 		or mouse.wincol > vim.api.nvim_win_get_width(mouse.winid)
 	then
 		return "<LeftMouse>"
+	end
+	if mouse.winid == state.sidebar_win then
+		sidebar_mouse_down = mouse
+		return "<C-\\><C-n><LeftMouse>"
 	end
 	local buf = vim.api.nvim_win_get_buf(mouse.winid)
 	local terminal = vim.bo[buf].buftype == "terminal"
@@ -192,6 +199,20 @@ local function handle_input_click()
 	-- Process the click in Normal mode so it focuses the destination even when
 	-- the source terminal captures mouse input, then enter input mode there.
 	return "<C-\\><C-n><LeftMouse><Cmd>startinsert<CR>"
+end
+
+local function handle_input_release()
+	local pressed = sidebar_mouse_down
+	sidebar_mouse_down = nil
+	local mouse = vim.fn.getmousepos()
+	if pressed and mouse.winid == state.sidebar_win and mouse.winid == pressed.winid
+		and mouse.screenrow == pressed.screenrow and mouse.screencol == pressed.screencol
+	then
+		-- Open after release: a native release in the sidebar would otherwise
+		-- pull focus back out of the chat we just opened on mouse-down.
+		return "<C-\\><C-n><LeftRelease><Plug>(AgentModeSidebarClick)"
+	end
+	return "<LeftRelease>"
 end
 
 local function map_agent_buffer(buf)
@@ -3446,6 +3467,27 @@ local function rename_selected_worktree()
 	end)
 end
 
+local function activate_sidebar_thread()
+	if state.preview_timer then
+		state.preview_timer:stop()
+	end
+	local thread = selected_thread()
+	if thread and thread._dismissed then
+		restore_and_open_thread(thread)
+	else
+		M.open_selected(true)
+	end
+end
+
+local function handle_sidebar_click()
+	local mouse = vim.fn.getmousepos()
+	if mouse.winid ~= state.sidebar_win then return end
+	-- Select the clicked row even when no hover event preceded the click.
+	local thread = state.row_threads and state.row_threads[mouse.line]
+	select_sidebar_row(mouse.line)
+	if thread then activate_sidebar_thread() end
+end
+
 local function sidebar_mappings()
 	local options = { buffer = state.sidebar_buf, silent = true, nowait = true }
 	vim.keymap.set("n", "j", function()
@@ -3545,12 +3587,7 @@ local function sidebar_mappings()
 			end
 			return
 		end
-		local thread = selected_thread()
-		if thread and thread._dismissed then
-			restore_and_open_thread(thread)
-		else
-			M.open_selected(true)
-		end
+		activate_sidebar_thread()
 	end, vim.tbl_extend("force", options, { desc = "Restore or open Agent Mode chat" }))
 	for _, key in ipairs({ "i", "I" }) do
 		vim.keymap.set("n", key, function()
@@ -4438,10 +4475,16 @@ function M.setup(options)
 	end
 
 	local group = vim.api.nvim_create_augroup("AgentMode", { clear = true })
+	vim.keymap.set("n", "<Plug>(AgentModeSidebarClick)", handle_sidebar_click, { silent = true })
 	vim.keymap.set({ "n", "i", "x", "t" }, "<LeftMouse>", handle_input_click, {
 		expr = true,
 		silent = true,
 		desc = "Agent Mode: click to enter input mode",
+	})
+	vim.keymap.set({ "n", "i", "x", "t" }, "<LeftRelease>", handle_input_release, {
+		expr = true,
+		silent = true,
+		desc = "Agent Mode: open clicked recent chat",
 	})
 	vim.api.nvim_create_autocmd("ColorScheme", {
 		group = group,

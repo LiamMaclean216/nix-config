@@ -1,0 +1,48 @@
+window#audio-popup, window#audio-dismiss,
+#audio-dismiss-area, #audio-card-surface { background: transparent; }
+#audio-card {
+  font-family: "@font@", sans-serif;
+  font-size: 11pt;
+  color: @foreground;
+  background-color: alpha(@background, @glass-opacity@);
+  background-image: @glass-sheen@;
+  border: none;
+  border-radius: @radius@px;
+  padding: 14px;
+}
+#audio-card .title { font-size: 13pt; font-weight: 600; }
+#audio-card .muted { color: @muted; font-size: 10pt; }
+#audio-card .audio-row {
+  background: transparent;
+  border-radius: 12px;
+  padding: 6px;
+}
+#audio-card button {
+  background-image: none;
+  background-color: transparent;
+  color: @foreground;
+  border: none;
+  border-radius: 10px;
+  box-shadow: none;
+  text-shadow: none;
+  min-height: 18px;
+  padding: 4px 6px;
+}
+#audio-card button:hover { background-color: alpha(@foreground, 0.12); }
+#audio-card button.close:focus, #audio-card button.close:active { outline: none; box-shadow: none; }
+#audio-card scale { padding: 5px 0; }
+#audio-card scale trough { background: alpha(@foreground, 0.12); min-height: 5px; border: none; }
+#audio-card scale highlight { background: @accent; min-height: 5px; border: none; }
+#audio-card scale slider {
+  background: @foreground; border: none; min-width: 13px; min-height: 13px;
+  box-shadow: 0 1px 3px alpha(@shadow, 0.3);
+}
+#audio-card scrollbar { background: transparent; }
+#audio-card scrollbar slider { background: alpha(@foreground, 0.18); min-width: 4px; }
+
+#audio-card .master-row {
+  padding-bottom: 10px;
+  border-bottom: 1px solid alpha(@foreground, 0.12);
+  border-radius: 0;
+}
+#audio-card .master-row > box > box > label:first-child { font-weight: 600; }

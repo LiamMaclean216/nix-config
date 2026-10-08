@@ -1,0 +1,65 @@
+--- a/include/modules/clock.hpp
++++ b/include/modules/clock.hpp
+@@ -21,6 +21,7 @@
+   auto doAction(const std::string&) -> void override;
+ 
+  private:
++  bool handleToggle(GdkEventButton* const& e) override;
+   const std::locale m_locale_;
+   // tooltip
+   const std::string m_tlpFmt_;
+--- a/src/modules/clock.cpp
++++ b/src/modules/clock.cpp
+@@ -1,4 +1,6 @@
+ #include "modules/clock.hpp"
++
++#include "client.hpp"
+ 
+ #include <glib.h>
+ #include <gtkmm/tooltip.h>
+@@ -21,7 +23,8 @@
+ namespace fmt_lib = waybar::util::date::format;
+ 
+ waybar::modules::Clock::Clock(const std::string& id, const Json::Value& config)
+-    : ALabel(config, "clock", id, "{:%H:%M}", 60, false, false, true),
++    : ALabel(config, "clock", id, "{:%H:%M}", 60, false,
++             config["hide-on-click"].isUInt(), true),
+       m_locale_{std::locale(config_["locale"].isString() ? config_["locale"].asString() : "")},
+       m_tlpFmt_{(config_["tooltip-format"].isString()) ? config_["tooltip-format"].asString() : ""},
+       m_tooltip_{new Gtk::Label()},
+@@ -441,6 +444,35 @@
+ }
+ 
+ // Actions handler
++bool waybar::modules::Clock::handleToggle(GdkEventButton* const& e) {
++  const auto& seconds = config_["hide-on-click"];
++  if (e->button != 1 || !seconds.isUInt() || seconds.asUInt() == 0) {
++    return ALabel::handleToggle(e);
++  }
++  if (e->type != GDK_BUTTON_PRESS) return true;
++
++  // Only the rendered text rectangle is clickable, never the surrounding padding.
++  int x, y, label_x, label_y;
++  label_.get_layout_offsets(x, y);
++  if (!label_.translate_coordinates(event_box_, 0, 0, label_x, label_y)) return false;
++  Pango::Rectangle ink, logical;
++  label_.get_layout()->get_pixel_extents(ink, logical);
++  x += label_x + ink.get_x();
++  y += label_y + ink.get_y();
++  if (e->x < x || e->x >= x + ink.get_width() ||
++      e->y < y || e->y >= y + ink.get_height()) return false;
++
++  for (auto& bar : Client::inst()->bars) bar->hide();
++  // Do not retain a clock/bar pointer: a configuration reload can replace them.
++  Glib::signal_timeout().connect(
++      []() {
++        for (auto& bar : Client::inst()->bars) bar->show();
++        return false;
++      },
++      seconds.asUInt() * 1000);
++  return true;
++}
++
+ auto waybar::modules::Clock::doAction(const std::string& name) -> void {
+   if (actionMap_[name]) {
+     (this->*actionMap_[name])();

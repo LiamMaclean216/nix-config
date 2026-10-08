@@ -15,11 +15,9 @@ let
   };
   claude-code = inputs.nix-claude-code.packages.${pkgs.system}.default;
   codex = inputs.codex-nix.packages.${pkgs.system}.default;
-  # Honor an explicitly selected LE Audio preset before PipeWire's default
-  # 32 kHz duplex preference. Unconfigured devices retain upstream behavior.
+  # Keep upstream's conservative LE Audio duplex negotiation.
   pipewire-buds = pkgs-unstable.pipewire.overrideAttrs (old: {
     patches = (old.patches or []) ++ [
-      ./packages/pipewire-bap/explicit-duplex-preset.patch
       # Upstream fix for an ISO receive callback racing microphone shutdown.
       ./packages/pipewire-bap/upstream-iso-source-teardown.patch
     ];
@@ -52,6 +50,9 @@ in
       # headphones connected without audio and report br-connection-busy.
       # Backport the upstream fix until the pinned release includes it.
       patches = (old.patches or []) ++ [
+        # Let each LE Audio earbud discover its own services. Sharing a set's
+        # cached GATT database can leave the second earbud connected but silent.
+        ./packages/bluez/independent-earbud-gatt.patch
         (pkgs.fetchurl {
           url = "https://github.com/bluez/bluez/commit/b7d71e5067856b0daf2f1f73b3fc95483236610e.patch";
           hash = "sha256-xwiE0vJLVuXJL9o0PMkGPzPp/ugQWEStkpB0mfYjeYA=";
@@ -118,7 +119,46 @@ in
     requires = [ "bluetooth-boot-state.service" ];
     after = [ "bluetooth-boot-state.service" ];
   };
+  # MT7925 setup can finish well after bluetoothd starts. Clear a startup
+  # soft-block once the adapter is actually ready, rather than only before
+  # the kernel has registered it. This is a one-time boot action, so later
+  # manual Bluetooth toggles remain effective.
+  systemd.services.bluetooth-startup-radio = {
+    description = "Enable Bluetooth once the adapter finishes initializing";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "bluetooth.service" ];
+    after = [ "bluetooth.service" ];
+    restartIfChanged = false;
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      TimeoutStartSec = 100;
+    };
+    script = ''
+      for attempt in $(${pkgs.coreutils}/bin/seq 1 90); do
+        for controller in /sys/class/bluetooth/hci*; do
+          [ -e "$controller" ] || continue
+          path="/org/bluez/''${controller##*/}"
+          if ! ${pkgs.systemd}/bin/busctl --system --timeout=1 get-property \
+            org.bluez "$path" org.bluez.Adapter1 Address >/dev/null 2>&1; then
+            continue
+          fi
+          ${pkgs.util-linux}/bin/rfkill unblock bluetooth
+          ${pkgs.systemd}/bin/busctl --system --timeout=3 set-property \
+            org.bluez "$path" org.bluez.Adapter1 Powered b true && exit 0
+        done
+        ${pkgs.coreutils}/bin/sleep 1
+      done
+      echo "No Bluetooth adapter became ready during startup" >&2
+      exit 1
+    '';
+  };
   services.blueman.enable = true;
+  # Keep the onboard MT7925 awake across idle/case transitions. Restrict
+  # this to its USB ID; leave power management of other USB devices alone.
+  services.udev.extraRules = ''
+    ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="13d3", ATTR{idProduct}=="3602", TEST=="power/control", ATTR{power/control}="on"
+  '';
   # boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"]; # Conflicting/unnecessary modules removed
   # Switch to default LTS kernel for better stability
   boot.kernelPackages = pkgs.linuxPackages;
@@ -292,22 +332,15 @@ in
               actions."update-props" = {
                 # Reconnect these earbuds using LE Audio, including their mic.
                 "bluez5.auto-connect" = [ "bap_sink" "bap_source" ];
-                # 48 kHz in both directions; 10 ms frames with extra retry
-                # budget avoid the unreliable default 7.5 ms call transport.
-                "bluez5.bap.preset" = "48_2_2";
-                "bluez5.bap.force-target-latency" = "high-reliability";
+                # Match upstream's 32 kHz duplex preference on both ears,
+                # including the playback-only ear. Keep 10 ms frames and
+                # the high-reliability retry budget without a codec patch.
+                "bluez5.bap.preset" = "32_2_2";
               };
             }
             {
-              matches = [
-                { "node.name" = "bluez_input.B0_64_E0_D4_A7_5C.0"; }
-                { "node.name" = "bluez_input.B0_64_E0_7E_71_06.0"; }
-              ];
-              actions."update-props" = {
-                # Keep both microphones aligned with 40 ms of jitter buffer
-                # at 48 kHz, even when a call requests a smaller audio quantum.
-                "bluez5.decode-buffer.latency" = 1920;
-              };
+              matches = [ { "device.name" = "bluez_card.B0_64_E0_7E_71_06"; } ];
+              actions."update-props"."bluez5.auto-connect" = [ "bap_sink" ];
             }
           ];
         };
@@ -330,7 +363,6 @@ in
               actions = {
                 "update-props" = {
                   priorities = [
-                    "bap-duplex"
                     "a2dp-sink-aac"
                     "a2dp-sink"
                     "a2dp-sink-sbc_xq"
@@ -338,6 +370,16 @@ in
                   ];
                 };
               };
+            }
+            {
+              matches = [ { "device.name" = "bluez_card.B0_64_E0_D4_A7_5C"; } ];
+              actions."update-props".priorities = [ "bap-duplex" ];
+            }
+            {
+              matches = [ { "device.name" = "bluez_card.B0_64_E0_7E_71_06"; } ];
+              # The right/leader Bud supplies the microphone. Keep the left
+              # playback-only to avoid an unnecessary second microphone CIS direction.
+              actions."update-props".priorities = [ "bap-sink" "bap-duplex" ];
             }
           ];
         };
@@ -350,7 +392,7 @@ in
     };
   };
 
-  # WirePlumber hosts the Bluetooth SPA plugins; use the patched codec there.
+  # WirePlumber hosts the Bluetooth SPA plugins; use the teardown fix there.
   systemd.user.services.wireplumber.environment.SPA_PLUGIN_DIR =
     "${pipewire-buds}/lib/spa-0.2";
 
