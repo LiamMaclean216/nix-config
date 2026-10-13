@@ -3,7 +3,6 @@
 # and in the NixOS manual (accessible by running ‘nixos-help’).
 {
   inputs,
-  config,
   pkgs,
   lib,
   ...
@@ -15,20 +14,6 @@ let
   };
   claude-code = inputs.nix-claude-code.packages.${pkgs.system}.default;
   codex = inputs.codex-nix.packages.${pkgs.system}.default;
-  # Keep upstream's conservative LE Audio duplex negotiation.
-  pipewire-buds = pkgs-unstable.pipewire.overrideAttrs (old: {
-    patches = (old.patches or []) ++ [
-      # Upstream fix for an ISO receive callback racing microphone shutdown.
-      ./packages/pipewire-bap/upstream-iso-source-teardown.patch
-    ];
-  });
-  mt7925-bluetooth-firmware = pkgs.runCommand
-    "mt7925-bluetooth-firmware-${pkgs-unstable.linux-firmware.version}"
-    { meta.priority = 1; }
-    ''
-      mkdir -p "$out/lib/firmware/mediatek/mt7925"
-      cp ${pkgs-unstable.linux-firmware}/lib/firmware/mediatek/mt7925/BT_RAM_CODE_MT7925_1_1_hdr.bin "$out/lib/firmware/mediatek/mt7925/"
-    '';
 in
 {
   imports = [
@@ -39,55 +24,17 @@ in
     ./programs/firefox.nix
   ];
 
-  # env vars configured later alongside Wayland tweaks
   hardware.bluetooth = {
     enable = true;
-    # BlueZ 5.80 leaves Disconnect/RemoveDevice pending when the controller
-    # returns MGMT_STATUS_DISCONNECTED (0x0e), as seen after Corne BT_CLR.
-    # The pinned unstable BlueZ (5.87) handles that as already disconnected.
-    package = pkgs-unstable.bluez.overrideAttrs (old: {
-      # BlueZ 5.87 discards cached A2DP endpoints on reconnect, which can leave
-      # headphones connected without audio and report br-connection-busy.
-      # Backport the upstream fix until the pinned release includes it.
-      patches = (old.patches or []) ++ [
-        # Let each LE Audio earbud discover its own services. Sharing a set's
-        # cached GATT database can leave the second earbud connected but silent.
-        ./packages/bluez/independent-earbud-gatt.patch
-        (pkgs.fetchurl {
-          url = "https://github.com/bluez/bluez/commit/b7d71e5067856b0daf2f1f73b3fc95483236610e.patch";
-          hash = "sha256-xwiE0vJLVuXJL9o0PMkGPzPp/ugQWEStkpB0mfYjeYA=";
-        })
-      ];
-    });
     powerOnBoot = true;
-    settings = {
-      General = {
-        # Shows battery charge of connected devices on supported
-        # Bluetooth adapters. Defaults to 'false'.
-        Experimental = true;
-        # ISO sockets are required for LE Audio playback and microphone.
-        KernelExperimental = "6fbaf188-05e0-496a-9885-d6ddfdb4e03e";
-        # When enabled other devices can connect faster to us, however
-        # the tradeoff is increased power consumption. Defaults to
-        # 'false'.
-        FastConnectable = true;
-        ControllerMode = "dual";
-        # Let Blueman confirm a replacement bond after ZMK BT_CLR.
-        # BlueZ defaults to rejecting peer-initiated Just Works re-pairing.
-        JustWorksRepairing = "confirm";
-      };
-      Policy = {
-        # Enable all controllers when they are found. This includes
-        # adapters present on start as well as adapters that are plugged
-        # in later on. Defaults to 'true'.
-        AutoEnable = true;
-      };
-    };
+    # Allow the keyboard to be paired again after clearing its saved bond.
+    settings.General.JustWorksRepairing = "confirm";
   };
-  # A saved rfkill soft-block overrides BlueZ's AutoEnable/powerOnBoot.
-  # Clear Bluetooth-only saved blocks once per boot, before rfkill restores
-  # them. This runs system-wide, including at the login screen; manual radio
-  # toggles during the session remain effective until the next boot.
+  services.blueman.enable = true;
+
+  # systemd-rfkill restores saved radio state independently of BlueZ's
+  # powerOnBoot setting. Clear only Bluetooth blocks before that restore;
+  # manual radio toggles during the session still work normally.
   systemd.services.bluetooth-boot-state = {
     description = "Enable Bluetooth at boot regardless of saved radio state";
     restartIfChanged = false;
@@ -119,10 +66,10 @@ in
     requires = [ "bluetooth-boot-state.service" ];
     after = [ "bluetooth-boot-state.service" ];
   };
-  # MT7925 setup can finish well after bluetoothd starts. Clear a startup
-  # soft-block once the adapter is actually ready, rather than only before
-  # the kernel has registered it. This is a one-time boot action, so later
-  # manual Bluetooth toggles remain effective.
+
+  # This MT7925 took 18 seconds to initialize at boot. Wait for its BlueZ
+  # adapter before enabling it, so a late startup block cannot win the race.
+  # RemainAfterExit makes this a one-time startup action, not a radio watchdog.
   systemd.services.bluetooth-startup-radio = {
     description = "Enable Bluetooth once the adapter finishes initializing";
     wantedBy = [ "multi-user.target" ];
@@ -135,7 +82,7 @@ in
       TimeoutStartSec = 100;
     };
     script = ''
-      for attempt in $(${pkgs.coreutils}/bin/seq 1 90); do
+      while (( SECONDS < 90 )); do
         for controller in /sys/class/bluetooth/hci*; do
           [ -e "$controller" ] || continue
           path="/org/bluez/''${controller##*/}"
@@ -153,23 +100,14 @@ in
       exit 1
     '';
   };
-  services.blueman.enable = true;
-  # Keep the onboard MT7925 awake across idle/case transitions. Restrict
-  # this to its USB ID; leave power management of other USB devices alone.
+
+  # The onboard adapter previously hung in USB runtime resume with -110/-71.
+  # Disable autosuspend for this USB ID only, including after driver binding.
   services.udev.extraRules = ''
-    ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="13d3", ATTR{idProduct}=="3602", TEST=="power/control", ATTR{power/control}="on"
+    ACTION=="add|bind|change", SUBSYSTEM=="usb", ATTR{idVendor}=="13d3", ATTR{idProduct}=="3602", TEST=="power/control", ATTR{power/control}="on"
   '';
-  # boot.kernelModules = ["iwlwifi" "btusb" "rtw88_8822be"]; # Conflicting/unnecessary modules removed
-  # Switch to default LTS kernel for better stability
+
   boot.kernelPackages = pkgs.linuxPackages;
-  # Skip MT7925's padded USB ISO data instead of treating it as audio packets.
-  # Build both modules together because they share struct btmtk_data.
-  boot.extraModulePackages = [
-    (pkgs.callPackage ./packages/mt7925-iso-padding {
-      kernel = config.boot.kernelPackages.kernel;
-      stdenv = config.boot.kernelPackages.kernel.stdenv;
-    })
-  ];
 
   # The TP-Link Archer T4U v3 uses RTL8822BU, not MediaTek.
   # Keep it in USB 2 mode: USB 3 mode switching has coincided with register
@@ -182,7 +120,6 @@ in
   # Enable firmware updates for WiFi and other hardware
   hardware.enableRedistributableFirmware = true;
   hardware.firmware = [
-    mt7925-bluetooth-firmware
     pkgs.linux-firmware
     # Firmware for the ASUS/Broadcom Bluetooth adapter (0b05:17cb).
     pkgs.broadcom-bt-firmware
@@ -281,126 +218,39 @@ in
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
-    package = pipewire-buds;
     alsa.enable = true;
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
     wireplumber = {
       enable = true;
-      # 0.5.14+ fixes channel mapping for coordinated LE Audio earbuds.
-      package = pkgs-unstable.wireplumber;
-      extraConfig = {
-        "51-bluez-config" = {
-          "monitor.bluez.properties" = {
-            "bluez5.enable-sbc-xq" = true;
-            "bluez5.enable-hw-volume" = true;
-            "bluez5.dummy-avrcp-player" = true;
-            # Native HFP negotiates the best supported call codec (including
-            # LC3-SWB); retain A2DP for stereo playback outside calls.
-            "bluez5.hfphsp-backend" = "native";
-            "bluez5.enable-msbc" = true;
-            "bluez5.roles" = [
-              "a2dp_sink"
-              "a2dp_source"
-              "bap_sink"
-              "bap_source"
-              "hfp_ag"
-            ];
-          };
-          "monitor.bluez.rules" = [
-            {
-              matches = [
-                {
-                  "device.name" = "~bluez_card.*";
-                }
-              ];
-              actions = {
-                "update-props" = {
-                  "bluez5.auto-connect" = [
-                    "a2dp_sink"
-                    "hfp_hf"
-                  ];
-                };
-              };
-            }
-            {
-              matches = [
-                { "device.name" = "bluez_card.B0_64_E0_D4_A7_5C"; }
-                { "device.name" = "bluez_card.B0_64_E0_7E_71_06"; }
-              ];
-              actions."update-props" = {
-                # Reconnect these earbuds using LE Audio, including their mic.
-                "bluez5.auto-connect" = [ "bap_sink" "bap_source" ];
-                # Match upstream's 32 kHz duplex preference on both ears,
-                # including the playback-only ear. Keep 10 ms frames and
-                # the high-reliability retry budget without a codec patch.
-                "bluez5.bap.preset" = "32_2_2";
-              };
-            }
-            {
-              matches = [ { "device.name" = "bluez_card.B0_64_E0_7E_71_06"; } ];
-              actions."update-props"."bluez5.auto-connect" = [ "bap_sink" ];
-            }
-          ];
+      extraConfig."51-bluetooth-playback" = {
+        "monitor.bluez.properties" = {
+          # Keep Bluetooth headphones on high-quality stereo playback.
+          # Leave all available A2DP codecs enabled for automatic selection.
+          "bluez5.roles" = [ "a2dp_sink" "a2dp_source" ];
+          "bluez5.hfphsp-backend" = "none";
+          "bluez5.enable-sbc-xq" = true;
         };
-        "11-bluetooth-policy" = {
-          "wireplumber.settings" = {
-            # BAP duplex provides stereo and microphone simultaneously;
-            # automatic classic profile switching would interrupt that link.
-            "bluetooth.autoswitch-to-headset-profile" = false;
-            "device.restore-profile" = false;
-          };
-        };
-        "12-bluetooth-profile-priority" = {
-          "device.profile.priority.rules" = [
-            {
-              matches = [
-                {
-                  "device.name" = "~bluez_card.*";
-                }
-              ];
-              actions = {
-                "update-props" = {
-                  priorities = [
-                    "a2dp-sink-aac"
-                    "a2dp-sink"
-                    "a2dp-sink-sbc_xq"
-                    "a2dp-sink-sbc"
-                  ];
-                };
-              };
-            }
-            {
-              matches = [ { "device.name" = "bluez_card.B0_64_E0_D4_A7_5C"; } ];
-              actions."update-props".priorities = [ "bap-duplex" ];
-            }
-            {
-              matches = [ { "device.name" = "bluez_card.B0_64_E0_7E_71_06"; } ];
-              # The right/leader Bud supplies the microphone. Keep the left
-              # playback-only to avoid an unnecessary second microphone CIS direction.
-              actions."update-props".priorities = [ "bap-sink" "bap-duplex" ];
-            }
-          ];
-        };
-        "13-bluetooth-settings" = {
-          "wireplumber.settings" = {
-            "device.restore-routes" = true;
-          };
+        "monitor.bluez.rules" = [
+          {
+            matches = [ { "device.name" = "~bluez_card.*"; } ];
+            actions."update-props"."bluez5.auto-connect" = [ "a2dp_sink" ];
+          }
+        ];
+        "wireplumber.settings" = {
+          "bluetooth.autoswitch-to-headset-profile" = false;
+          # Select the best available profile instead of restoring a mic profile.
+          "device.restore-profile" = false;
         };
       };
     };
   };
 
-  # WirePlumber hosts the Bluetooth SPA plugins; use the teardown fix there.
-  systemd.user.services.wireplumber.environment.SPA_PLUGIN_DIR =
-    "${pipewire-buds}/lib/spa-0.2";
-
   # Enable touchpad support (enabled default in most desktopManager).
   # services.xserver.libinput.enable = true;
 
   # Define a user account. Don't forget to set a password with 'passwd'.
-  hardware.bluetooth.settings.Policy.ReconnectAttempts = 7;
   users.groups.librepods = {};
   users.users.liam = {
     isNormalUser = true;

@@ -25,14 +25,9 @@ The hidden prompt saves the key with owner-only permissions to
 `~/.config/voice-input/api-key`, outside Git and the Nix store. The service reads
 it on each recording, so updating it needs no restart. Never put the key in Nix.
 
-Prefers the USB 2.0 Camera microphone when connected, otherwise uses the system
-default PipeWire microphone. Availability is checked on every recording.
+Uses the system default PipeWire microphone for each recording.
 Bluetooth headphones are configured for A2DP playback only; the AirPods
 microphone is disabled so recording cannot lower their playback quality.
-Change `preferredMicrophone` in `desktop/voice-input.nix` to another PipeWire
-`node.name` (list inputs with `wpctl status -n`), or `""` to always use the system
-default, then apply with `make home`. The service passes this setting as
-`VOICE_INPUT_MICROPHONE`.
 
 Uses 16 kHz mono PCM and Soniox `stt-rt-v5`
 with an English language hint (other languages remain allowed). Audio streams
