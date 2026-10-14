@@ -48,6 +48,7 @@ in {
   nixpkgs.config.allowUnfree = true;
 
   home.sessionVariables = {
+    BROWSER = "chrome-new-window";
     CHROMIUM_EXECUTABLE = "${pkgs.chromium}/bin/chromium";
     NPM_CONFIG_PREFIX = "${config.home.homeDirectory}/node_modules";
     TERMINAL = "alacritty";
@@ -65,6 +66,23 @@ in {
       pkgs.libGL
       pkgs.libGLU
     ]}";
+  };
+
+  xdg.mimeApps = {
+    enable = true;
+    associations.added."application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "libreoffice-3.desktop" "libreoffice-2.desktop" ];
+    defaultApplications = {
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = [ "libreoffice-3.desktop" ];
+      "x-scheme-handler/claude-cli" = [ "claude-code-url-handler.desktop" ];
+      "x-scheme-handler/discord" = [ "vesktop.desktop" ];
+      "text/html" = [ "google-chrome.desktop" ];
+      "application/xhtml+xml" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/http" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/https" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/about" = [ "google-chrome.desktop" ];
+      "x-scheme-handler/unknown" = [ "google-chrome.desktop" ];
+      "application/pdf" = [ "google-chrome.desktop" ];
+    };
   };
 
   home.sessionPath = [
@@ -146,6 +164,7 @@ in {
   programs.home-manager.enable = true;
 
   imports = [
+    ./programs/chrome.nix
     { home.file = desktopFiles "wofi" // desktopFiles "wlogout"; }
     ./programs/nvim/nvim.nix
     ./programs/vscode.nix

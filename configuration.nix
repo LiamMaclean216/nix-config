@@ -285,6 +285,7 @@ in
   environment.systemPackages = with pkgs; [
     vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     wget
+    pkgs-unstable.google-chrome
     pkgs-unstable.vesktop
     pkgs-unstable.discord
     lazydocker
@@ -418,12 +419,12 @@ in
     enable = true;
     defaultApplications = {
       # Web browser defaults
-      "text/html" = ["firefox.desktop"];
-      "application/xhtml+xml" = ["firefox.desktop"];
-      "x-scheme-handler/http" = ["firefox.desktop"];
-      "x-scheme-handler/https" = ["firefox.desktop"];
-      "x-scheme-handler/about" = ["firefox.desktop"];
-      "x-scheme-handler/unknown" = ["firefox.desktop"];
+      "text/html" = ["google-chrome.desktop"];
+      "application/xhtml+xml" = ["google-chrome.desktop"];
+      "x-scheme-handler/http" = ["google-chrome.desktop"];
+      "x-scheme-handler/https" = ["google-chrome.desktop"];
+      "x-scheme-handler/about" = ["google-chrome.desktop"];
+      "x-scheme-handler/unknown" = ["google-chrome.desktop"];
 
       "application/msword" = ["writer.desktop"];
       "application/vnd.ms-word.document.macroEnabled.12" = ["writer.desktop"];
@@ -443,7 +444,7 @@ in
       "application/vnd.openxmlformats-officedocument.presentationml.presentation" = ["impress.desktop"];
       "application/vnd.openxmlformats-officedocument.presentationml.template" = ["impress.desktop"];
 
-      "application/pdf" = ["firefox.desktop"];
+      "application/pdf" = ["google-chrome.desktop"];
     };
   };
   programs.obs-studio.enable = true; # enables OBS plugins packaged by NixOS
